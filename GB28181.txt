@@ -1,0 +1,13 @@
+server_id = "34020000002000000001"
+server_ipaddr = "192.168.44.91"
+server_port = 5060
+
+cameraParam = (
+    { sipid = "34020000001320000001";
+      ipaddr = "192.168.44.91";
+      username = "lyc";
+      userpwd = "lyc";
+      port = 5080;
+      recvport = 6000;
+    }
+);
