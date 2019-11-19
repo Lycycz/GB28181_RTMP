@@ -157,6 +157,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="gb28281_demo.cpp" />
+    <ClCompile Include="PTZ.cpp" />
     <ClCompile Include="pugixml.cpp" />
     <ClCompile Include="rtp.cpp" />
   </ItemGroup>

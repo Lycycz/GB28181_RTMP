@@ -66,6 +66,33 @@ unsigned long parse_time_stamp(const unsigned char* p)
 	return val;
 }
 
+int inline ProgramStreamPackHeader(char* Pack, int length, char **NextPack, int *leftlength)
+{
+    printf("%02x %02x %02x %02x\n",Pack[0],Pack[1],Pack[2],Pack[3]);
+    //通过 00 00 01 ba头的第14个字节的最后3位来确定头部填充了多少字节
+    program_stream_pack_header *PsHead = (program_stream_pack_header *)Pack;
+    unsigned char pack_stuffing_length = PsHead->stuffinglen & '\x07';
+ 
+    *leftlength = length - sizeof(program_stream_pack_header) - pack_stuffing_length;//减去头和填充的字节
+    *NextPack = Pack+sizeof(program_stream_pack_header) + pack_stuffing_length;
+ 
+    //如果开头含有bb 则去掉bb
+    if(*NextPack && (*NextPack)[0]=='\x00' && (*NextPack)[1]=='\x00' && (*NextPack)[2]=='\x01' && (*NextPack)[3]=='\xBB')
+    {
+        program_stream_pack_bb_header *pbbHeader=(program_stream_pack_bb_header *)(*NextPack);
+        unsigned char bbheaderlen=pbbHeader->num2;
+        (*NextPack) = (*NextPack) + sizeof(program_stream_pack_bb_header)+bbheaderlen;
+        *leftlength = length - sizeof(program_stream_pack_bb_header) - bbheaderlen;
+        int a=0;
+        a++;
+    }
+ 
+    if(*leftlength<4) return 0;
+ 
+    //printf("[%s]2 %x %x %x %x\n", __FUNCTION__, (*NextPack)[0], (*NextPack)[1], (*NextPack)[2], (*NextPack)[3]);
+ 
+    return *leftlength;
+}
 
 inline int Pes(char* Pack, int length, char** NextPack, int* leftlength, char** PayloadData, int* PayloadDataLen)
 {
@@ -78,14 +105,17 @@ inline int Pes(char* Pack, int length, char** NextPack, int* leftlength, char** 
 	if (length < sizeof(program_stream_e)) return 0;
 
 	littel_endian_size pse_length;
+	printf("%x %x", PSEPack->PackLength.byte[0], PSEPack->PackLength.byte[1]);
 	pse_length.byte[0] = PSEPack->PackLength.byte[1];
 	pse_length.byte[1] = PSEPack->PackLength.byte[0];
 
 	*PayloadDataLen = pse_length.length - 2 - 1 - PSEPack->stuffing_length;
-	int pts = parse_time_stamp((unsigned char*)Pack + 9);
+	
+	// first pes contains pts
+	//int pts = parse_time_stamp((unsigned char*)Pack + 9);
 
 	if (*PayloadDataLen > 0)
-		* PayloadData = Pack + sizeof(program_stream_e) + PSEPack->stuffing_length;
+		* PayloadData = Pack + sizeof(program_stream_e) - 1 + PSEPack->stuffing_length;
 
 	*leftlength = length - pse_length.length - sizeof(pack_start_code) - sizeof(littel_endian_size);
 
@@ -100,7 +130,7 @@ inline int Pes(char* Pack, int length, char** NextPack, int* leftlength, char** 
 
 inline int ProgramStreamMap(char* Pack, int length, char** NextPack, int* leftlength, char** PayloadData, int* PayloadDataLen)
 {
-	//printf("[%s]%x %x %x %x\n", __FUNCTION__, Pack[0], Pack[1], Pack[2], Pack[3]);
+	printf("[%s]%x %x %x %x\n", __FUNCTION__, Pack[0], Pack[1], Pack[2], Pack[3]);
 
 	program_stream_map* PSMPack = (program_stream_map*)Pack;
 
@@ -125,3 +155,86 @@ inline int ProgramStreamMap(char* Pack, int length, char** NextPack, int* leftle
 	return *leftlength;
 }
 
+int inline GetH246FromPs(char* buffer,int length, char **h264Buffer, int *h264length, int& pts, int& flag)
+{
+    int leftlength = 0;
+    char *NextPack = 0;
+ 
+    *h264Buffer = buffer;
+    *h264length = 0;
+ 
+    if(ProgramStreamPackHeader(buffer, length, &NextPack, &leftlength)==0)
+        return 0;
+ 
+    char *PayloadData = NULL;
+    int PayloadDataLen=0;
+ 
+	int i = 0;
+    while(leftlength >= sizeof(pack_start_code))
+    {
+        PayloadData = NULL;
+        PayloadDataLen=0;
+ 
+        if(NextPack
+            && NextPack[0]=='\x00'
+            && NextPack[1]=='\x00'
+            && NextPack[2]=='\x01'
+            && NextPack[3]=='\xE0')
+        {
+            //接着就是流包，说明是非i帧
+			if (i == 2) {
+				pts = parse_time_stamp((unsigned char*)NextPack + 9);
+			}
+            if(Pes(NextPack, leftlength, &NextPack, &leftlength, &PayloadData, &PayloadDataLen))
+            {
+				
+                if(PayloadDataLen)
+                {
+                    memcpy(buffer, PayloadData, PayloadDataLen);
+                    buffer += PayloadDataLen;
+                    *h264length += PayloadDataLen;
+                }
+            }
+            else
+            {
+                if(PayloadDataLen)
+                {
+                    memcpy(buffer, PayloadData, PayloadDataLen);
+                    buffer += PayloadDataLen;
+                    *h264length += PayloadDataLen;
+                }
+ 
+                break;
+            }
+        }
+        else if(NextPack
+            && NextPack[0]=='\x00'
+            && NextPack[1]=='\x00'
+            && NextPack[2]=='\x01'
+            && NextPack[3]=='\xBC')
+        {
+			if (i == 0) flag = 1;
+			else flag = 0;
+            if(ProgramStreamMap(NextPack, leftlength, &NextPack, &leftlength, &PayloadData, &PayloadDataLen)==0)
+                break;
+        }
+		else if (NextPack
+			&& NextPack[0] == '\x00'
+			&& NextPack[1] == '\x00'
+			&& NextPack[2] == '\x01'
+			&& NextPack[3] == '\xBA') {
+			ProgramStreamPackHeader(NextPack, leftlength, &NextPack, &leftlength);
+		}
+        else
+        {
+			//memcpy(buffer , NextPack, 14);
+			//*h264length += 14;
+			//for (int i = 0; i < 14; i++)
+			//	printf("%02x  ",NextPack[i]);
+            //printf("[%s]no konw %02x %02x %02x %02x\n", __FUNCTION__, NextPack[0], NextPack[1], NextPack[2], NextPack[3]);
+            break;
+        }
+		i++;
+    }
+    return *h264length;
+}

@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 
 enum PTZ
 {
@@ -9,6 +10,11 @@ enum PTZ
 	LEFT,
 	RIGHT,
 };
+
+// ptz str -> enum PTZ
+PTZ ptzconvert(std::string x);
+
+PTZ ptzconvert(const char* x);
 
 // unused
 /*

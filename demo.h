@@ -1,5 +1,7 @@
 #pragma once
 #include "281_Mutex.h"
+#include "281_Message.h"
+#include "PTZ.h"
 
 #include <stdio.h>
 #include <winsock2.h>
@@ -23,7 +25,7 @@
 #include <thread>
 #include <algorithm>
 #include <cassert>
-
+#include <map>
 
 #include <libconfig.h++>
 #include <mxml.h>
@@ -76,13 +78,27 @@ struct gb28181Params {
 	int SN;
 };
 
+struct ReqCamInfo {
+	std::string Sip;
+	std::vector<std::string> req;
+};
+
+struct ClientInfo {
+	std::string Ip;
+	std::string port;
+	std::vector<ReqCamInfo> ReqCam;
+};
+
+
 class LiveVideoParams {
 public:
-	LiveVideoParams() : LVPcondvar(&mutex_) {};
+	LiveVideoParams() : LVPcondvar(&mutex_), CameraNum(0), StreamType(0) {};
 
-	int CarmeraNum;
+	int CameraNum;
 	std::vector<CameraParam> CameraParams;
 	gb28181Params gb28181params;
+	// sip clientinfo
+	std::map<std::string, ClientInfo> clients;
 	int StreamType;
 	
 	Mutex mutex_;
@@ -106,3 +122,5 @@ void Send_Catalog_Single(eXosip_t* ex, CameraParam *camerapar, gb28181Params gb2
 void Send_Invite_Play(eXosip_t* ex, LiveVideoParams* livevideoparams);
 
 void Send_Invite_Play_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Params gb281281par);
+
+void Send_PtzControl_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Params gb28181par, PTZ Ptz);

@@ -1,5 +1,5 @@
 #pragma once
-enum
+enum MessageReq
 {
 	Message_DeviceControl,
 	Message_DeviceConfig,
@@ -13,7 +13,7 @@ enum
 	Message_MobilePosition,
 
 	Message_Keepalive,
-	Message_Alarm,
+	//Message_Alarm,
 	Message_MediaStatus,
 	Message_Broadcast,
 };

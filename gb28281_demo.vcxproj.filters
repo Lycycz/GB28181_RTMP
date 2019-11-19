@@ -24,6 +24,9 @@
     <ClCompile Include="rtp.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="PTZ.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="demo.h">

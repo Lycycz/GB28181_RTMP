@@ -33,7 +33,7 @@ void ReadCfg(std::string cfgpath, LiveVideoParams&livevidoparams)
 
 	libconfig::Setting& root = config.getRoot();
 	libconfig::Setting& cameras = root["cameraParam"];
-	livevideoparams.CarmeraNum = cameras.getLength();
+	livevideoparams.CameraNum = cameras.getLength();
 	
 	for (auto i = 0; i < cameras.getLength(); i++) {
 		CameraParam campar;
@@ -51,7 +51,7 @@ void ReadCfg(std::string cfgpath, LiveVideoParams&livevidoparams)
 		livevideoparams.CameraParams.push_back(campar);
 	}
 
-	
+
 }
 
 //TODO:get cmdtype unused
@@ -86,10 +86,11 @@ static void RegisterSuccess(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVide
 		//osip_message_free(pSRegister);
 	}
 
+
 	std::string username = je->request->from->url->username;
 	auto it = livevideoparams->FindCameraparam(username);
-	if (it >= 0 && (livevideoparams->CameraParams[it].alive != 1 || 
-		livevideoparams->CameraParams[it].registered != 1)) 
+	if (it >= 0 && (livevideoparams->CameraParams[it].alive != 1 ||
+		livevideoparams->CameraParams[it].registered != 1))
 	{
 		livevideoparams->mutex_.Lock();
 		//livevideoparams->LVPcondvar.Wait();
@@ -97,10 +98,7 @@ static void RegisterSuccess(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVide
 		livevideoparams->CameraParams[it].registered = 1;
 		livevideoparams->mutex_.Unlock();
 	}
-	/*if (it != livevideoparams->CameraParams.end()) {
-		it->registered = 1;
-		it->alive = 1;
-	}*/
+
 }
 
 static void Msg_Forward(struct eXosip_t* peCtx, eXosip_event_t* je, char* buf, CameraParam* campar) {
@@ -121,6 +119,17 @@ static void Msg_Forward(struct eXosip_t* peCtx, eXosip_event_t* je, char* buf, C
 	}
 }
 
+/*  easy control
+<EasyControl>
+<CmdType>Zoomin</CmdType>
+<DeviceID>3200000000000000000001</DeviceID>
+</EasyControl>
+*/
+static void Msg_EasyControl(struct eXosip_t* peCtx, eXosip_event_t* je, CameraParam* campar, std::string easycontrolcmd) {
+	PTZ ptz = ptzconvert(easycontrolcmd);
+	Send_PtzControl_Single(peCtx, campar, livevideoparams.gb28181params, ptz);
+}
+
 static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVideoParams* livevideoparams) {
 	int ret;
 	std::string CmdValue;
@@ -138,11 +147,42 @@ static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVi
 			campar = &livevideoparams->CameraParams[cam_index];
 		else
 			return -1;
-		//if (strcmp(CmdType, "Keepalive") == 0) {
-		if (strstr(CmdValue.c_str(), "Control") != nullptr || strstr(CmdValue.c_str(), "Query") != nullptr) {
+
+		if (strstr(CmdValue.c_str(), "Control") != nullptr) {
 			Msg_Forward(peCtx, je, body->body, campar);
 		}
+		// TODO:简化逻辑
+		else if (strstr(CmdValue.c_str(), "Query") != nullptr) {
+			auto clients = livevideoparams->clients;
+			auto it = clients[je->request->from->url->username];
+			if (clients.find(je->request->from->url->username) != clients.end()) {
+				std::vector <std::string> tmpcmd{ CmdType };
+				ReqCamInfo tmpReqCamIndo{ DeviceID, std::move(tmpcmd) };
+				std::vector<ReqCamInfo> ReqCamInfoVec{std::move(tmpReqCamIndo)};
+				livevideoparams->clients.insert(
+					std::map<std::string, ClientInfo>::value_type(je->request->from->url->username,
+						ClientInfo{ je->request->from->url->host,
+					je->request->from->url->port, std::move(ReqCamInfoVec) }));
+			}
+			else {
+				auto Camit = std::find_if(it.ReqCam.begin(), it.ReqCam.end(),
+					[&](ReqCamInfo caminfo)
+					{
+						return	caminfo.Sip == DeviceID;
+					});
+				if (Camit == it.ReqCam.end()) {
+					std::vector<std::string> tmpcmd{ CmdType };
+					it.ReqCam.push_back(ReqCamInfo{ DeviceID, std::move(tmpcmd) });
+				}
+				else {
+					(*Camit).req.push_back(CmdType);
+				}
+			}
 
+			Msg_Forward(peCtx, je, body->body, campar);
+			//je->request->from->url->host
+			//je->request->from->url->port
+		}
 		else if (strstr(CmdValue.c_str(), "Notify") != nullptr) {
 			if (strstr(CmdType.c_str(), "Keeplive") != nullptr) {
 				livevideoparams->mutex_.Lock();
@@ -151,8 +191,14 @@ static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVi
 				livevideoparams->mutex_.Unlock();
 			}
 		}
-		
+		else if (strstr(CmdValue.c_str(), "EasyControl") != nullptr) {
+			Msg_EasyControl(peCtx, je, campar, CmdType);
+		}
+		// TODO:将请求从列表中删除
+		else if (strstr(CmdValue.c_str(), "Response") != nullptr) {
 
+			std::cout << "response" << std::endl;
+		}
 		else {
 			printf("msg body: %s \n", body->body);
 		}
@@ -184,7 +230,6 @@ void MsgProcess(eXosip_t* ex, LiveVideoParams* livevideoparams)
 		case EXOSIP_REGISTRATION_SUCCESS:
 		{
 			printf("reg sussess \n");
-
 			//reg_status = 1;
 		}
 		break;
@@ -236,6 +281,20 @@ void MsgProcess(eXosip_t* ex, LiveVideoParams* livevideoparams)
 			}
 			else if (MSG_IS_BYE(je->request)) {
 				printf("recv bye \n");
+				std::string username = je->request->from->url->username;
+				auto it = livevideoparams->FindCameraparam(username);
+				if (it >= 0 && (livevideoparams->CameraParams[it].alive != 0 ||
+					livevideoparams->CameraParams[it].registered != 0))
+				{
+					livevideoparams->mutex_.Lock();
+					//livevideoparams->LVPcondvar.Wait();
+					livevideoparams->CameraParams[it].alive = 0;
+					livevideoparams->CameraParams[it].played = 0;
+					livevideoparams->mutex_.Unlock();
+				}
+			}
+			else if (je->response!=nullptr) {
+				std::cout << "a";
 			}
 			else
 			{
@@ -310,7 +369,7 @@ void SendThread(eXosip_t* ex, LiveVideoParams* livevideoparams) {
 }
 
 void Send_Catalogs(eXosip_t* ex, LiveVideoParams* livevideoparams) {
-	int num = livevideoparams->CarmeraNum;
+	int num = livevideoparams->CameraNum;
 	for (auto i = 0; i < num; i++) {
 		CameraParam* camerpar = &livevideoparams->CameraParams[i];
 		if(camerpar->registered && !camerpar->cateloged)
@@ -451,7 +510,7 @@ void Send_DeviceInfo_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Params 
 }
 
 void Send_Invite_Play(eXosip_t* ex, LiveVideoParams* livevideoparams) {
-	int num = livevideoparams->CarmeraNum;
+	int num = livevideoparams->CameraNum;
 	for (auto i = 0; i < num; i++) {
 		CameraParam* camerpar = &livevideoparams->CameraParams[i];
 		if (camerpar->registered && !camerpar->played) {
@@ -487,11 +546,11 @@ void Send_Invite_Play_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Params
 		"s=Play\r\n"
 		"c=IN IP4 %s\r\n"
 		"t=0 0\r\n"
-		//"m=video %d RTP/AVP 96 97 98\r\n"
-		"m=video %d RTP/AVP 96\r\n"
-		//"a=rtpmap:96 PS/90000\r\n"
-		//"a=rtpmap:97 MPEG4/90000\r\n"
-		"a=rtpmap:96 H264/90000\r\n"
+		"m=video %d RTP/AVP 96 97 98\r\n"
+		//"m=video %d RTP/AVP 96\r\n"
+		"a=rtpmap:96 PS/90000\r\n"
+		"a=rtpmap:97 MPEG4/90000\r\n"
+		"a=rtpmap:98 H264/90000\r\n"
 		"a=recvonly\r\n"
 		"y=0000001024\r\n"
 		"f=\r\n", gb28181par.localSipId.c_str(), gb28181par.localIpAddr.c_str(),
@@ -636,7 +695,7 @@ void Send_PtzControl_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Params 
 //	//sendprocess.join();
 //	
 //	Sleep(5000);
-//	//Send_Invite_Play_Single(ex, &livevideoparams.CameraParams[0], livevideoparams.gb28181params);
+//	Send_Catalog_Single(ex, &livevideoparams.CameraParams[0], livevideoparams.gb28181params);
 //	//Send_DeviceStatus_Single(ex, &livevideoparams.CameraParams[0], livevideoparams.gb28181params);
 //	//Send_Catalog_Single(ex, &livevideoparams.CameraParams[0], livevideoparams.gb28181params);
 //	msgprocess.join();
