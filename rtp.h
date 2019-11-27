@@ -1,4 +1,33 @@
 #pragma once
+extern "C"
+{
+#include "libavformat/avformat.h"
+#include "libavutil/mathematics.h"
+#include "libavutil/time.h"
+#include "libavutil/error.h"
+};
+
+#include "demo.h"
+#include "PTZ.h"
+
+#include "rtpsession.h"
+#include "rtpudpv4transmitter.h"
+#include "rtpipv4address.h"
+#include "rtpsessionparams.h"
+#include "rtperrors.h"
+#include "rtplibraryversion.h"
+#include "rtppacket.h"
+
+#include <vector>
+#include <deque>
+#include <stdlib.h>
+#include <stdio.h>
+#include <iostream>
+#include <string>
+#include <algorithm>
+#include <functional>
+#include <numeric> 
+
 struct pack_start_code
 {
 	unsigned char start_code[3];
@@ -17,6 +46,11 @@ struct program_stream_pack_bb_header
 	unsigned char head[4];
 	unsigned char num1;
 	unsigned char num2;
+};
+
+struct Frame {
+	int size;
+	char* data;
 };
 
 union littel_endian_size
@@ -43,30 +77,9 @@ struct program_stream_map
 	//elem
 };
 
-unsigned long parse_time_stamp(const unsigned char* p)
-{
-	unsigned long b;
-	//共33位，溢出后从0开始
-	unsigned long val;
+unsigned long parse_time_stamp(const unsigned char* p);
 
-	//第1个字节的第5、6、7位
-	b = *p++;
-	val = (b & 0x0e) << 29;
-
-	//第2个字节的8位和第3个字节的前7位
-	b = (*(p++)) << 8;
-	b += *(p++);
-	val += ((b & 0xfffe) << 14);
-
-	//第4个字节的8位和第5个字节的前7位
-	b = (*(p++)) << 8;
-	b += *(p++);
-	val += ((b & 0xfffe) >> 1);
-
-	return val;
-}
-
-int inline ProgramStreamPackHeader(char* Pack, int length, char **NextPack, int *leftlength)
+inline int ProgramStreamPackHeader(char* Pack, int length, char **NextPack, int *leftlength)
 {
     printf("%02x %02x %02x %02x\n",Pack[0],Pack[1],Pack[2],Pack[3]);
     //通过 00 00 01 ba头的第14个字节的最后3位来确定头部填充了多少字节
@@ -155,7 +168,7 @@ inline int ProgramStreamMap(char* Pack, int length, char** NextPack, int* leftle
 	return *leftlength;
 }
 
-int inline GetH246FromPs(char* buffer,int length, char **h264Buffer, int *h264length, int& pts, int& flag)
+inline int GetH246FromPs(char* buffer,int length, char **h264Buffer, int *h264length, int& pts, int& flag)
 {
     int leftlength = 0;
     char *NextPack = 0;
@@ -183,11 +196,12 @@ int inline GetH246FromPs(char* buffer,int length, char **h264Buffer, int *h264le
         {
             //接着就是流包，说明是非i帧
 			if (i == 2) {
+				// 测试好h264 码流中，第2个包是00 00 01 ba重复
+				// 第3个是pes包，是i帧，取出时间戳
 				pts = parse_time_stamp((unsigned char*)NextPack + 9);
 			}
             if(Pes(NextPack, leftlength, &NextPack, &leftlength, &PayloadData, &PayloadDataLen))
             {
-				
                 if(PayloadDataLen)
                 {
                     memcpy(buffer, PayloadData, PayloadDataLen);
@@ -203,7 +217,6 @@ int inline GetH246FromPs(char* buffer,int length, char **h264Buffer, int *h264le
                     buffer += PayloadDataLen;
                     *h264length += PayloadDataLen;
                 }
- 
                 break;
             }
         }
@@ -213,6 +226,7 @@ int inline GetH246FromPs(char* buffer,int length, char **h264Buffer, int *h264le
             && NextPack[2]=='\x01'
             && NextPack[3]=='\xBC')
         {
+			// 第一个包是 00 00 01 BC i帧关键帧
 			if (i == 0) flag = 1;
 			else flag = 0;
             if(ProgramStreamMap(NextPack, leftlength, &NextPack, &leftlength, &PayloadData, &PayloadDataLen)==0)
@@ -223,14 +237,12 @@ int inline GetH246FromPs(char* buffer,int length, char **h264Buffer, int *h264le
 			&& NextPack[1] == '\x00'
 			&& NextPack[2] == '\x01'
 			&& NextPack[3] == '\xBA') {
+			// 测试ps流中，可能存在00 00 01 BA重复，跳过 
 			ProgramStreamPackHeader(NextPack, leftlength, &NextPack, &leftlength);
 		}
         else
         {
-			//memcpy(buffer , NextPack, 14);
-			//*h264length += 14;
-			//for (int i = 0; i < 14; i++)
-			//	printf("%02x  ",NextPack[i]);
+			// 测试码流中最后14位无法识别
             //printf("[%s]no konw %02x %02x %02x %02x\n", __FUNCTION__, NextPack[0], NextPack[1], NextPack[2], NextPack[3]);
             break;
         }
@@ -238,3 +250,5 @@ int inline GetH246FromPs(char* buffer,int length, char **h264Buffer, int *h264le
     }
     return *h264length;
 }
+
+void jrtplib_rtp_recv_thread(CameraParam* camerapar);

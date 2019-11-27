@@ -4,9 +4,9 @@
 #include "demo.h"
 #include "PTZ.h"
 #include "stdafx.h"
+#include "rtp.h"
 
-LiveVideoParams livevideoparams;
-
+/*
 int LiveVideoParams::FindCameraparam(std::string sipid) {
 	auto it = std::find_if(CameraParams.begin(), CameraParams.end(),
 		[&](CameraParam par)
@@ -16,13 +16,29 @@ int LiveVideoParams::FindCameraparam(std::string sipid) {
 	std::vector<CameraParam>::iterator begin = CameraParams.begin();
 	return std::distance(begin, it) < CameraParams.size() ? std::distance(begin, it) : -1;
 }
+*/
+
+template<class C>
+int LiveVideoParams::FindSipIndex(std::string sipid, C vec) {
+	auto it = std::find_if(vec.begin(), vec.end(),
+		[=](auto c)
+		{
+			return c.Sip == sipid;
+		});
+	auto begin = vec.begin();
+	return std::distance(begin, it) < vec.size() ? std::distance(begin, it) : -1;
+}
+
+void CameraParam::push_stream() {
+	jrtplib_rtp_recv_thread(this);
+}
 
 const char* whitespace_cb(mxml_node_t* node, int where)
 {
 	return NULL;
 }
 
-void ReadCfg(std::string cfgpath, LiveVideoParams&livevidoparams)
+void ReadCfg(std::string cfgpath, LiveVideoParams&livevideoparams)
 {
 	libconfig::Config config;
 	config.readFile(cfgpath.c_str());
@@ -37,8 +53,8 @@ void ReadCfg(std::string cfgpath, LiveVideoParams&livevidoparams)
 	
 	for (auto i = 0; i < cameras.getLength(); i++) {
 		CameraParam campar;
-		campar.SipId = static_cast<const char*>(cameras[i]["sipid"]);
-		campar.IpAddr = static_cast<const char*>(cameras[i]["ipaddr"]);
+		campar.Sip = static_cast<const char*>(cameras[i]["sipid"]);
+		campar.Ip = static_cast<const char*>(cameras[i]["ipaddr"]);
 		campar.UserName = static_cast<const char*>(cameras[i]["username"]);
 		campar.UserPwd = static_cast<const char*>(cameras[i]["userpwd"]);
 		campar.port = cameras[i]["port"];
@@ -47,10 +63,9 @@ void ReadCfg(std::string cfgpath, LiveVideoParams&livevidoparams)
 		campar.registered = 0;
 		campar.cateloged = 0;
 		campar.played = 0;
-
+		campar.pushed = 0;
 		livevideoparams.CameraParams.push_back(campar);
 	}
-
 
 }
 
@@ -83,12 +98,10 @@ static void RegisterSuccess(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVide
 		eXosip_lock(peCtx);
 		eXosip_message_send_answer(peCtx, je->tid, 200, pSRegister);
 		eXosip_unlock(peCtx);
-		//osip_message_free(pSRegister);
 	}
 
-
 	std::string username = je->request->from->url->username;
-	auto it = livevideoparams->FindCameraparam(username);
+	auto it = livevideoparams->FindSipIndex(username, livevideoparams->CameraParams);
 	if (it >= 0 && (livevideoparams->CameraParams[it].alive != 1 ||
 		livevideoparams->CameraParams[it].registered != 1))
 	{
@@ -98,16 +111,18 @@ static void RegisterSuccess(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVide
 		livevideoparams->CameraParams[it].registered = 1;
 		livevideoparams->mutex_.Unlock();
 	}
-
 }
 
-static void Msg_Forward(struct eXosip_t* peCtx, eXosip_event_t* je, char* buf, CameraParam* campar) {
+// 模板函数 类型可以为Cameraparam 和 ClientInfo
+// 需要类型含有Sip Ip port 三个字段， 转发相应地址
+template <class T>
+static void Msg_Forward(struct eXosip_t* peCtx, eXosip_event_t* je, char* buf, T* pararm, LiveVideoParams* livevideoparams) {
 	osip_message_t* message = NULL;
 	char dest_call[256], source_call[256];
-	_snprintf(dest_call, 256, "sip:%s@%s:%d", campar->SipId.c_str(), campar->IpAddr.c_str(),
-		campar->port);
-	_snprintf(source_call, 256, "sip:%s@%s:%d", livevideoparams.gb28181params.localSipId.c_str(),
-		livevideoparams.gb28181params.localIpAddr.c_str(), livevideoparams.gb28181params.localSipPort);
+	_snprintf(dest_call, 256, "sip:%s@%s:%d", pararm->Sip.c_str(), pararm->Ip.c_str(),
+		pararm->port);
+	_snprintf(source_call, 256, "sip:%s@%s:%d", livevideoparams->gb28181params.localSipId.c_str(),
+		livevideoparams->gb28181params.localIpAddr.c_str(), livevideoparams->gb28181params.localSipPort);
 	int ret = eXosip_message_build_request(peCtx, &message, "MESSAGE", dest_call, source_call, NULL);
 	if (ret == 0 && message != NULL)
 	{
@@ -125,9 +140,77 @@ static void Msg_Forward(struct eXosip_t* peCtx, eXosip_event_t* je, char* buf, C
 <DeviceID>3200000000000000000001</DeviceID>
 </EasyControl>
 */
-static void Msg_EasyControl(struct eXosip_t* peCtx, eXosip_event_t* je, CameraParam* campar, std::string easycontrolcmd) {
+static void Msg_EasyControl(struct eXosip_t* peCtx, eXosip_event_t* je, CameraParam* camerpar, 
+	LiveVideoParams* livevideoparams, std::string easycontrolcmd) {
 	PTZ ptz = ptzconvert(easycontrolcmd);
-	Send_PtzControl_Single(peCtx, campar, livevideoparams.gb28181params, ptz);
+	Send_PtzControl_Single(peCtx, camerpar, livevideoparams, ptz);
+}
+
+// 返回查询该条命令当前摄像机的客户端列表，并将其在列表中删除
+static std::vector<ClientInfo> Msg_Camera_Query_Response_Fun(eXosip_event_t* je,
+	LiveVideoParams* livevideoparams, std::string CmdType, std::string DeviceID) {
+	
+	std::string CamSip = je->request->from->url->username;
+	std::string CamIp = je->request->from->url->host;
+	std::string CamPort = je->request->from->url->port;
+
+	std::vector<ClientInfo> clientlist;
+
+	for (auto& client : livevideoparams->clients) {
+		int index = livevideoparams->FindSipIndex(CamSip, client.ReqCam);
+		if (index >= 0) {
+			auto it = std::find(client.ReqCam[index].req.begin(), client.ReqCam[index].req.end(), CmdType);
+			if (index >= 0) {
+				clientlist.push_back(client);
+				client.ReqCam[index].req.erase(it);
+			}
+		}
+	}
+	return clientlist;
+}
+
+// 将查询插入到列表，等待发送
+static void Msg_Client_Query_Request_Fun(eXosip_event_t* je, LiveVideoParams* livevideoparams,
+	std::string CmdType, std::string DeviceID) {
+
+	std::string clientSip = je->request->from->url->username;
+	std::string clientIp = je->request->from->url->host;
+	std::string clientPort = je->request->from->url->port;
+
+	auto clients = livevideoparams->clients;
+	// 查找客户端列表
+	int index = livevideoparams->FindSipIndex(clientSip, clients);
+	ClientInfo clientinfo;
+	//  存在客户端
+	if (index >= 0) {
+		clientinfo = clients[index];
+		// 查找客户端的摄像机列表
+		index = 0;
+		index = livevideoparams->FindSipIndex(DeviceID, clientinfo.ReqCam);
+		ReqCamInfo reqcaminfo;
+		// 存在对应摄像机
+		if (index >= 0) {
+			reqcaminfo = clientinfo.ReqCam[index];
+			// 查看对应摄像机的请求是否存在
+			auto it = std::find(reqcaminfo.req.begin(), reqcaminfo.req.end(), CmdType);
+			// 不存在 添加
+			if (it == reqcaminfo.req.end()) reqcaminfo.req.push_back(CmdType);
+		}
+		// 存在客户端，不存在对应摄像机， 将摄像机插入
+		else {
+			std::vector<std::string> req;
+			req.push_back(CmdType);
+			clientinfo.ReqCam.push_back(ReqCamInfo{ DeviceID, req });
+		}
+	}
+	// 不存在对应客户端， 将客户端和客户端请求的摄像机插入
+	else {
+		std::vector<std::string> req;
+		req.push_back(CmdType);
+		std::vector<ReqCamInfo> ReqCamInfos;
+		ReqCamInfos.push_back(ReqCamInfo{ DeviceID, req });
+		clients.push_back(ClientInfo{ clientSip, clientIp, clientPort, ReqCamInfos });
+	}
 }
 
 static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVideoParams* livevideoparams) {
@@ -141,7 +224,7 @@ static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVi
 	if (body != nullptr) {
 		GetCmdType(body->body, CmdValue, CmdType);
 		GetDeviceId(body->body, DeviceID);
-		int cam_index = livevideoparams->FindCameraparam(DeviceID);
+		int cam_index = livevideoparams->FindSipIndex(DeviceID, livevideoparams->CameraParams);
 		CameraParam* campar;
 		if (cam_index >= 0)
 			campar = &livevideoparams->CameraParams[cam_index];
@@ -149,37 +232,30 @@ static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVi
 			return -1;
 
 		if (strstr(CmdValue.c_str(), "Control") != nullptr) {
-			Msg_Forward(peCtx, je, body->body, campar);
+			Msg_Forward(peCtx, je, body->body, campar, livevideoparams);
 		}
-		// TODO:简化逻辑
+		// 从客户端接收到查询命令，是查询请求，需要转发到摄像机
+		// 从摄像机接收到查询命令，是查询结果，需要将结果转发到所有请求的客户端
 		else if (strstr(CmdValue.c_str(), "Query") != nullptr) {
-			auto clients = livevideoparams->clients;
-			auto it = clients[je->request->from->url->username];
-			if (clients.find(je->request->from->url->username) != clients.end()) {
-				std::vector <std::string> tmpcmd{ CmdType };
-				ReqCamInfo tmpReqCamIndo{ DeviceID, std::move(tmpcmd) };
-				std::vector<ReqCamInfo> ReqCamInfoVec{std::move(tmpReqCamIndo)};
-				livevideoparams->clients.insert(
-					std::map<std::string, ClientInfo>::value_type(je->request->from->url->username,
-						ClientInfo{ je->request->from->url->host,
-					je->request->from->url->port, std::move(ReqCamInfoVec) }));
+			std::string Sendsip = je->request->from->url->username;
+			// 摄像头发出的查询结果
+			int index = livevideoparams->FindSipIndex(Sendsip, livevideoparams->CameraParams);
+			if (index >= 0) {
+				Msg_Client_Query_Request_Fun(je, livevideoparams, CmdType, DeviceID);
+				Msg_Forward(peCtx, je, body->body, &livevideoparams->CameraParams[index],livevideoparams);
 			}
+			// 客户端发出的查询指令
 			else {
-				auto Camit = std::find_if(it.ReqCam.begin(), it.ReqCam.end(),
-					[&](ReqCamInfo caminfo)
-					{
-						return	caminfo.Sip == DeviceID;
-					});
-				if (Camit == it.ReqCam.end()) {
-					std::vector<std::string> tmpcmd{ CmdType };
-					it.ReqCam.push_back(ReqCamInfo{ DeviceID, std::move(tmpcmd) });
-				}
-				else {
-					(*Camit).req.push_back(CmdType);
-				}
+				std::vector<ClientInfo> clientlist = Msg_Camera_Query_Response_Fun(je, livevideoparams, CmdType, DeviceID);
+				for (auto i : clientlist)
+					Msg_Forward(peCtx, je, body->body, &i, livevideoparams);
 			}
 
-			Msg_Forward(peCtx, je, body->body, campar);
+		// 转发信息
+		//Msg_Forward(peCtx, je, body->body, campar, livevideoparams);
+
+		
+			
 			//je->request->from->url->host
 			//je->request->from->url->port
 		}
@@ -192,7 +268,7 @@ static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVi
 			}
 		}
 		else if (strstr(CmdValue.c_str(), "EasyControl") != nullptr) {
-			Msg_EasyControl(peCtx, je, campar, CmdType);
+			Msg_EasyControl(peCtx, je, campar, livevideoparams, CmdType);
 		}
 		// TODO:将请求从列表中删除
 		else if (strstr(CmdValue.c_str(), "Response") != nullptr) {
@@ -226,7 +302,7 @@ void MsgProcess(eXosip_t* ex, LiveVideoParams* livevideoparams)
 
 		switch (je->type)
 		{
-			/*注册成功*/
+		/*注册成功*/
 		case EXOSIP_REGISTRATION_SUCCESS:
 		{
 			printf("reg sussess \n");
@@ -237,7 +313,6 @@ void MsgProcess(eXosip_t* ex, LiveVideoParams* livevideoparams)
 		case EXOSIP_REGISTRATION_FAILURE:
 		{
 			printf("status_code = %d \n", je->response->status_code);
-
 			/*收到服务器返回的注册失败/401未认证状态*/
 			if ((NULL != je->response) && (401 == je->response->status_code))
 			{
@@ -282,7 +357,7 @@ void MsgProcess(eXosip_t* ex, LiveVideoParams* livevideoparams)
 			else if (MSG_IS_BYE(je->request)) {
 				printf("recv bye \n");
 				std::string username = je->request->from->url->username;
-				auto it = livevideoparams->FindCameraparam(username);
+				auto it = livevideoparams->FindSipIndex(username, livevideoparams->CameraParams);
 				if (it >= 0 && (livevideoparams->CameraParams[it].alive != 0 ||
 					livevideoparams->CameraParams[it].registered != 0))
 				{
@@ -302,6 +377,7 @@ void MsgProcess(eXosip_t* ex, LiveVideoParams* livevideoparams)
 			}
 		}
 		break;
+
 		case EXOSIP_MESSAGE_REQUESTFAILURE:
 		{
 			printf("通用应答:对方收到消息格式错误\n");
@@ -314,12 +390,14 @@ void MsgProcess(eXosip_t* ex, LiveVideoParams* livevideoparams)
 			RegisterSuccess(ex, je, livevideoparams);
 		}
 		break;
+
 		case EXOSIP_CALL_INVITE:
 		{
 			printf("\nEXOSIP_CALL_INVITE\n");
 			osip_body* body = nullptr;
 			osip_message_get_body(je->request, 0, &body);
-		/*	if (g_call_id > 0)
+			/*	
+			if (g_call_id > 0)
 			{
 				printf("the call is exist ! \n");
 				break;
@@ -348,6 +426,7 @@ void MsgProcess(eXosip_t* ex, LiveVideoParams* livevideoparams)
 			// printf("msg body : %s \n", body->body);
 		}
 		break;
+
 		case EXOSIP_CALL_CLOSED:
 		{
 			osip_body* body = nullptr;
@@ -373,14 +452,14 @@ void Send_Catalogs(eXosip_t* ex, LiveVideoParams* livevideoparams) {
 	for (auto i = 0; i < num; i++) {
 		CameraParam* camerpar = &livevideoparams->CameraParams[i];
 		if(camerpar->registered && !camerpar->cateloged)
-			Send_Catalog_Single(ex, camerpar, livevideoparams->gb28181params);
+			Send_Catalog_Single(ex, camerpar, livevideoparams);
 	}
 }
 
 // 验证通过
-void Send_Catalog_Single(eXosip_t* ex, CameraParam *camerapar, gb28181Params gb28181par) {
+void Send_Catalog_Single(eXosip_t* ex, CameraParam *camerapar, LiveVideoParams* livevideoparams) {
 	int ret;
-	std::string deviceId = gb28181par.localSipId;
+	std::string deviceId = livevideoparams->gb28181params.localSipId;
 
 	mxml_node_t* tree, * query, * node;
 	tree = mxmlNewXML("1.0");
@@ -395,17 +474,17 @@ void Send_Catalog_Single(eXosip_t* ex, CameraParam *camerapar, gb28181Params gb2
 			node = mxmlNewElement(query, "CmdType");
 			mxmlNewText(node, 0, "Catalog");
 			node = mxmlNewElement(query, "SN");
-			_snprintf(sn, 32, "%d", livevideoparams.gb28181params.SN++);
+			_snprintf(sn, 32, "%d", livevideoparams->gb28181params.SN++);
 			mxmlNewText(node, 0, sn);
 			node = mxmlNewElement(query, "DeviceID");
-			mxmlNewText(node, 0, camerapar->SipId.c_str());
+			mxmlNewText(node, 0, camerapar->Sip.c_str());
 			mxmlSaveString(tree, buf, 256, whitespace_cb);
 
 			osip_message_t* message = NULL;
-			_snprintf(dest_call, 256, "sip:%s@%s:%d", camerapar->SipId.c_str(), camerapar->IpAddr.c_str(),
+			_snprintf(dest_call, 256, "sip:%s@%s:%d", camerapar->Sip.c_str(), camerapar->Ip.c_str(),
 				camerapar->port);
-			_snprintf(source_call, 256, "sip:%s@%s:%d", livevideoparams.gb28181params.localSipId.c_str(),
-				livevideoparams.gb28181params.localIpAddr.c_str(), livevideoparams.gb28181params.localSipPort);
+			_snprintf(source_call, 256, "sip:%s@%s:%d", livevideoparams->gb28181params.localSipId.c_str(),
+				livevideoparams->gb28181params.localIpAddr.c_str(), livevideoparams->gb28181params.localSipPort);
 			ret = eXosip_message_build_request(ex, &message, "MESSAGE", dest_call, source_call, NULL);
 			if (ret == 0 && message != NULL)
 			{
@@ -431,7 +510,7 @@ void Send_Catalog_Single(eXosip_t* ex, CameraParam *camerapar, gb28181Params gb2
 	}
 }
 
-void Send_DeviceStatus_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Params gb28181par) {
+void Send_DeviceStatus_Single(eXosip_t* ex, CameraParam* camerapar, LiveVideoParams* livevideoparams) {
 	int ret;
 	char sn[32];
 
@@ -445,17 +524,17 @@ void Send_DeviceStatus_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Param
 			node = mxmlNewElement(query, "CmdType");
 			mxmlNewText(node, 0, "DeviceStatus");
 			node = mxmlNewElement(query, "SN");
-			_snprintf(sn, 32, "%d", livevideoparams.gb28181params.SN++);
+			_snprintf(sn, 32, "%d", livevideoparams->gb28181params.SN++);
 			mxmlNewText(node, 0, sn);
 			node = mxmlNewElement(query, "DeviceID");
-			mxmlNewText(node, 0, camerapar->SipId.c_str());
+			mxmlNewText(node, 0, camerapar->Sip.c_str());
 			mxmlSaveString(tree, buf, 256, whitespace_cb);
 
 			osip_message_t* message = NULL;
-			_snprintf(dest_call, 256, "sip:%s@%s:%d", camerapar->SipId.c_str(), camerapar->IpAddr.c_str(),
+			_snprintf(dest_call, 256, "sip:%s@%s:%d", camerapar->Sip.c_str(), camerapar->Ip.c_str(),
 				camerapar->port);
-			_snprintf(source_call, 256, "sip:%s@%s:%d", livevideoparams.gb28181params.localSipId.c_str(),
-				livevideoparams.gb28181params.localIpAddr.c_str(), livevideoparams.gb28181params.localSipPort);
+			_snprintf(source_call, 256, "sip:%s@%s:%d", livevideoparams->gb28181params.localSipId.c_str(),
+				livevideoparams->gb28181params.localIpAddr.c_str(), livevideoparams->gb28181params.localSipPort);
 			ret = eXosip_message_build_request(ex, &message, "MESSAGE", dest_call, source_call, NULL);
 			if (ret == 0 && message != NULL)
 			{
@@ -470,7 +549,7 @@ void Send_DeviceStatus_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Param
 	}
 }
 
-void Send_DeviceInfo_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Params gb28181par) {
+void Send_DeviceInfo_Single(eXosip_t* ex, CameraParam* camerapar, LiveVideoParams* livevideoparams) {
 	int ret;
 	char sn[32];
 
@@ -484,17 +563,17 @@ void Send_DeviceInfo_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Params 
 			node = mxmlNewElement(query, "CmdType");
 			mxmlNewText(node, 0, "DeviceInfo");
 			node = mxmlNewElement(query, "SN");
-			_snprintf(sn, 32, "%d", livevideoparams.gb28181params.SN++);
+			_snprintf(sn, 32, "%d", livevideoparams->gb28181params.SN++);
 			mxmlNewText(node, 0, sn);
 			node = mxmlNewElement(query, "DeviceID");
-			mxmlNewText(node, 0, camerapar->SipId.c_str());
+			mxmlNewText(node, 0, camerapar->Sip.c_str());
 			mxmlSaveString(tree, buf, 256, whitespace_cb);
 
 			osip_message_t* message = NULL;
-			_snprintf(dest_call, 256, "sip:%s@%s:%d", camerapar->SipId.c_str(), camerapar->IpAddr.c_str(),
+			_snprintf(dest_call, 256, "sip:%s@%s:%d", camerapar->Sip.c_str(), camerapar->Ip.c_str(),
 				camerapar->port);
-			_snprintf(source_call, 256, "sip:%s@%s:%d", livevideoparams.gb28181params.localSipId.c_str(),
-				livevideoparams.gb28181params.localIpAddr.c_str(), livevideoparams.gb28181params.localSipPort);
+			_snprintf(source_call, 256, "sip:%s@%s:%d", livevideoparams->gb28181params.localSipId.c_str(),
+				livevideoparams->gb28181params.localIpAddr.c_str(), livevideoparams->gb28181params.localSipPort);
 			ret = eXosip_message_build_request(ex, &message, "MESSAGE", dest_call, source_call, NULL);
 			if (ret == 0 && message != NULL)
 			{
@@ -514,7 +593,7 @@ void Send_Invite_Play(eXosip_t* ex, LiveVideoParams* livevideoparams) {
 	for (auto i = 0; i < num; i++) {
 		CameraParam* camerpar = &livevideoparams->CameraParams[i];
 		if (camerpar->registered && !camerpar->played) {
-			Send_Invite_Play_Single(ex, camerpar, livevideoparams->gb28181params);
+			Send_Invite_Play_Single(ex, camerpar, livevideoparams);
 
 			livevideoparams->mutex_.Lock();
 			camerpar->played = 1;
@@ -523,17 +602,17 @@ void Send_Invite_Play(eXosip_t* ex, LiveVideoParams* livevideoparams) {
 	}
 }
 
-void Send_Invite_Play_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Params gb28181par) {
+void Send_Invite_Play_Single(eXosip_t* ex, CameraParam* camerapar, LiveVideoParams* livevideoparams) {
 	int ret;
 
 	char dest_call[256], source_call[256], subject[128];
 	osip_message_t* invite = NULL;
 
-	_snprintf(dest_call, 256, "sip:%s@%s:%d", camerapar->SipId.c_str(), camerapar->IpAddr.c_str(),
+	_snprintf(dest_call, 256, "sip:%s@%s:%d", camerapar->Sip.c_str(), camerapar->Ip.c_str(),
 		camerapar->port);
-	_snprintf(source_call, 256, "sip:%s@%s:%d", livevideoparams.gb28181params.localSipId.c_str(),
-		livevideoparams.gb28181params.localIpAddr.c_str(), livevideoparams.gb28181params.localSipPort);
-	_snprintf(subject, 128, "%s:0,%s:0", camerapar->SipId.c_str(), gb28181par.localSipId.c_str());
+	_snprintf(source_call, 256, "sip:%s@%s:%d", livevideoparams->gb28181params.localSipId.c_str(),
+		livevideoparams->gb28181params.localIpAddr.c_str(), livevideoparams->gb28181params.localSipPort);
+	_snprintf(subject, 128, "%s:0,%s:0", camerapar->Sip.c_str(), livevideoparams->gb28181params.localSipId.c_str());
 	ret = eXosip_call_build_initial_invite(ex, &invite, dest_call, source_call, NULL, subject);
 	if (ret != 0) {
 		printf("eXosip_call_build_initial_invite failed, %s,%s,%s", dest_call, source_call, subject);
@@ -547,14 +626,13 @@ void Send_Invite_Play_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Params
 		"c=IN IP4 %s\r\n"
 		"t=0 0\r\n"
 		"m=video %d RTP/AVP 96 97 98\r\n"
-		//"m=video %d RTP/AVP 96\r\n"
 		"a=rtpmap:96 PS/90000\r\n"
 		"a=rtpmap:97 MPEG4/90000\r\n"
 		"a=rtpmap:98 H264/90000\r\n"
 		"a=recvonly\r\n"
 		"y=0000001024\r\n"
-		"f=\r\n", gb28181par.localSipId.c_str(), gb28181par.localIpAddr.c_str(),
-		gb28181par.localIpAddr.c_str(), camerapar->PlayPort);
+		"f=\r\n", livevideoparams->gb28181params.localSipId.c_str(), livevideoparams->gb28181params.localIpAddr.c_str(),
+		livevideoparams->gb28181params.localIpAddr.c_str(), camerapar->PlayPort);
 	osip_message_set_body(invite, body, bodyLen);
 	osip_message_set_content_type(invite, "APPLICATION/SDP");
 	eXosip_lock(ex);
@@ -596,7 +674,7 @@ int PtzCmd_Build(PTZ ptz, char* ptzcmd, int Horizontal_speed=0, int Vertical_spe
 }
 
 // 验证通过 
-void Send_PtzControl_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Params gb28181par, PTZ Ptz) {
+void Send_PtzControl_Single(eXosip_t* ex, CameraParam* camerapar, LiveVideoParams* livevideoparams, PTZ Ptz) {
 	char sn[32];
 	char PtzCmd[20];
 	int ret;
@@ -614,19 +692,19 @@ void Send_PtzControl_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Params 
 			node = mxmlNewElement(control, "CmdType");
 			mxmlNewText(node, 0, "DeviceControl");
 			node = mxmlNewElement(control, "SN");
-			_snprintf(sn, 32, "%d", gb28181par.SN++);
+			_snprintf(sn, 32, "%d", livevideoparams->gb28181params.SN++);
 			mxmlNewText(node, 0, sn);
 			node = mxmlNewElement(control, "DeviceID");
-			mxmlNewText(node, 0, camerapar->SipId.c_str());
+			mxmlNewText(node, 0, camerapar->Sip.c_str());
 			node = mxmlNewElement(control, "PTZCmd");
 			mxmlNewText(node, 0, PtzCmd);
 			mxmlSaveString(tree, buf, 256, whitespace_cb);
 
 			osip_message_t* message = NULL;
-			_snprintf(dest_call, 256, "sip:%s@%s:%d", camerapar->SipId.c_str(), camerapar->IpAddr.c_str(),
+			_snprintf(dest_call, 256, "sip:%s@%s:%d", camerapar->Sip.c_str(), camerapar->Ip.c_str(),
 				camerapar->port);
-			_snprintf(source_call, 256, "sip:%s@%s:%d", livevideoparams.gb28181params.localSipId.c_str(),
-				livevideoparams.gb28181params.localIpAddr.c_str(), livevideoparams.gb28181params.localSipPort);
+			_snprintf(source_call, 256, "sip:%s@%s:%d", livevideoparams->gb28181params.localSipId.c_str(),
+				livevideoparams->gb28181params.localIpAddr.c_str(), livevideoparams->gb28181params.localSipPort);
 			ret = eXosip_message_build_request(ex, &message, "MESSAGE", dest_call, source_call, NULL);
 
 			if (ret == 0 && message != NULL)
@@ -642,63 +720,78 @@ void Send_PtzControl_Single(eXosip_t* ex, CameraParam* camerapar, gb28181Params 
 	}
 }
 
-//int main()
-//{
-//	int ret = 0;
-//	osip_message_t* reg = NULL;
-//	osip_message_t* answer = NULL;
-//	eXosip_t* ex = NULL;
-//	char from[100] = { 0 };/*sip:主叫用户名@被叫IP地址*/
-//	char proxy[100] = { 0 };/*sip:被叫IP地址:被叫IP端口*/
-//	char contact[100] = { 0 };
-//	int  reg_id = 0;
-//	int reg_status = 0;
-//	int g_call_id = 0;
-//
-//	ex = eXosip_malloc();
-//	ret = eXosip_init(ex);
-//	ret = eXosip_listen_addr(ex, IPPROTO_UDP, NULL, 5060, AF_INET, 0);
-//	
-//	ReadCfg("E:/tmp_project/gb28281_demo/GB28181.txt", livevideoparams);
-//	
-//	//sprintf(from, "sip:%s@%s", DEV_ID, DEV_IP);
-//	//sprintf(proxy, "sip:%s@%s:%d", SERVER_ID, SERVER_IP, SERVER_PORT);
-//	//sprintf(contact, "sip:%s@%s:%d", DEV_ID, DEV_IP, DEV_PORT);
-//	///*构建一个register*/
-//	//eXosip_lock(ex);
-//	//reg_id = eXosip_register_build_initial_register(ex, from, proxy, contact, 3600, &reg);
-//	//if (reg_id < 0)
-//	//{
-//	//	eXosip_unlock(ex);
-//	//	printf("eXosip_register_build_initial_register error!\r\n");
-//	//	return -1;
-//	//}
-//	////osip_message_set_authorization(reg, "Capability algorithm=\"H:MD5\"");
-//	///*发送register*/
-//	//ret = eXosip_register_send_register(ex, reg_id, reg);
-//	//eXosip_unlock(ex);
-//	//if (0 != ret)
-//	//{
-//	//	printf("eXosip_register_send_register no authorization error!\r\n");
-//	//	return -1;
-//	//}
-//	//printf("send reg msg \n");
-//	
-//	eXosip_lock(ex);
-//	eXosip_automatic_action(ex);
-//	eXosip_unlock(ex);
-//	
-//	
-//	std::thread msgprocess(MsgProcess, ex, &livevideoparams);
-//	//std::thread sendprocess(SendThread, ex, &livevideoparams);
-//	//Send_Catalog_Single(ex, livevideoparams.CameraParams[0], livevideoparams.gb28181params);
-//	//sendprocess.join();
-//	
-//	Sleep(5000);
-//	Send_Catalog_Single(ex, &livevideoparams.CameraParams[0], livevideoparams.gb28181params);
-//	//Send_DeviceStatus_Single(ex, &livevideoparams.CameraParams[0], livevideoparams.gb28181params);
-//	//Send_Catalog_Single(ex, &livevideoparams.CameraParams[0], livevideoparams.gb28181params);
-//	msgprocess.join();
-//	return 0;
-//}
+int main()
+{
+	int ret = 0;
+	osip_message_t* reg = NULL;
+	osip_message_t* answer = NULL;
+	eXosip_t* ex = NULL;
+	char from[100] = { 0 };		/*sip:主叫用户名@被叫IP地址*/
+	char proxy[100] = { 0 };	/*sip:被叫IP地址:被叫IP端口*/
+	char contact[100] = { 0 };
+	int  reg_id = 0;
+	int reg_status = 0;
+	int g_call_id = 0;
+
+	ex = eXosip_malloc();
+	ret = eXosip_init(ex);
+	ret = eXosip_listen_addr(ex, IPPROTO_UDP, NULL, 5060, AF_INET, 0);
+	
+	ReadCfg("E:/tmp_project/gb28281_demo/GB28181.txt", Singleton<LiveVideoParams>::Instance());
+	
+	//sprintf(from, "sip:%s@%s", DEV_ID, DEV_IP);
+	//sprintf(proxy, "sip:%s@%s:%d", SERVER_ID, SERVER_IP, SERVER_PORT);
+	//sprintf(contact, "sip:%s@%s:%d", DEV_ID, DEV_IP, DEV_PORT);
+	///*构建一个register*/
+	//eXosip_lock(ex);
+	//reg_id = eXosip_register_build_initial_register(ex, from, proxy, contact, 3600, &reg);
+	//if (reg_id < 0)
+	//{
+	//	eXosip_unlock(ex);
+	//	printf("eXosip_register_build_initial_register error!\r\n");
+	//	return -1;
+	//}
+	////osip_message_set_authorization(reg, "Capability algorithm=\"H:MD5\"");
+	///*发送register*/
+	//ret = eXosip_register_send_register(ex, reg_id, reg);
+	//eXosip_unlock(ex);
+	//if (0 != ret)
+	//{
+	//	printf("eXosip_register_send_register no authorization error!\r\n");
+	//	return -1;
+	//}
+	//printf("send reg msg \n");
+	
+	eXosip_lock(ex);
+	eXosip_automatic_action(ex);
+	eXosip_unlock(ex);
+	
+	std::thread msgprocess(MsgProcess, ex, &Singleton<LiveVideoParams>::Instance());
+	msgprocess.detach();
+	//std::thread sendprocess(SendThread, ex, &livevideoparams);
+	//Send_Catalog_Single(ex, livevideoparams.CameraParams[0], livevideoparams.gb28181params);
+	//sendprocess.join();
+	
+	Sleep(5000);
+	// Send_Catalog_Single(ex, &livevideoparams.CameraParams[0], livevideoparams.gb28181params);
+	Send_Invite_Play(ex, &Singleton<LiveVideoParams>::Instance());
+	// Send_Invite_Play_Single(ex, &livevideoparams.CameraParams[0], livevideoparams.gb28181params);
+
+	Sleep(5000);
+	while (1)
+	{
+		for (auto& i : Singleton<LiveVideoParams>::Instance().CameraParams) {
+			if (i.alive && i.played && !i.pushed)
+			{
+				std::thread t1(std::mem_fn(&CameraParam::push_stream), i);
+				i.pushed = 1;
+				t1.detach();
+			}
+		}
+		Sleep(1000);
+	}
+	//Send_DeviceStatus_Single(ex, &livevideoparams.CameraParams[0], livevideoparams.gb28181params);
+	//Send_Catalog_Single(ex, &livevideoparams.CameraParams[0], livevideoparams.gb28181params);
+	return 0;
+}
 

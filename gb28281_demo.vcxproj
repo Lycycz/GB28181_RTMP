@@ -167,6 +167,7 @@
     <ClInclude Include="demo.h" />
     <ClInclude Include="PTZ.h" />
     <ClInclude Include="rtp.h" />
+    <ClInclude Include="Singleton.h" />
     <ClInclude Include="stdafx.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
