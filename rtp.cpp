@@ -49,7 +49,6 @@ AVFormatContext* Init_ofmt_ctx(CameraParam* camerapar) {
 	const char* out_filename = "rtmp://192.168.44.91/live/home";
 
 	const char* in_filename = "1.h264";
-	//const char* in_filename = "rtp://192.168.44.91/live/home";
 
 	if ((ret = avformat_open_input(&ifmt_ctx, in_filename, 0, 0)) < 0) {
 		printf("Could not open input file '%s'", in_filename);

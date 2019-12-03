@@ -112,6 +112,7 @@ public:
 	// Á÷ÀàĞÍ
 	int StreamType;
 	
+	//std::mutex mut;
 	Mutex mutex_;
 	CondVar LVPcondvar; // unused
 
