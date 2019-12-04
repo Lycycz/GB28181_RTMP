@@ -156,6 +156,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="device.cpp" />
+    <ClCompile Include="execute.cpp" />
     <ClCompile Include="gb28281_demo.cpp" />
     <ClCompile Include="PTZ.cpp" />
     <ClCompile Include="pugixml.cpp" />
@@ -165,6 +167,7 @@
     <ClInclude Include="281_Message.h" />
     <ClInclude Include="281_Mutex.h" />
     <ClInclude Include="demo.h" />
+    <ClInclude Include="device.h" />
     <ClInclude Include="PTZ.h" />
     <ClInclude Include="rtp.h" />
     <ClInclude Include="Singleton.h" />

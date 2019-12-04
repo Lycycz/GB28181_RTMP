@@ -27,6 +27,12 @@
     <ClCompile Include="PTZ.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="execute.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="device.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="demo.h">
@@ -48,6 +54,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Singleton.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="device.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
