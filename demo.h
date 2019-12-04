@@ -3,6 +3,7 @@
 #include "281_Message.h"
 #include "PTZ.h"
 #include "Singleton.h"
+#include "device.h"
 
 #include <stdio.h>
 #include <winsock2.h>
@@ -109,6 +110,8 @@ public:
 	gb28181Params gb28181params;
 	// sip clientinfo
 	std::vector<ClientInfo> clients;
+
+	ClientList clientlist;
 	// Á÷ÀàÐÍ
 	int StreamType;
 	
@@ -123,6 +126,8 @@ public:
 	int FindSipIndex(std::string sipid, C vec);
 };
 
+void ReadCfg(std::string cfgpath, LiveVideoParams& livevideoparams);
+
 const char* whitespace_cb(mxml_node_t* node, int where);
 
 static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVideoParams* livevideoparams);
@@ -135,4 +140,8 @@ void Send_Invite_Play(eXosip_t* ex, LiveVideoParams* livevideoparams);
 
 void Send_Invite_Play_Single(eXosip_t* ex, CameraParam* camerapar, LiveVideoParams* livevideoparams);
 
+int PtzCmd_Build(PTZ ptz, char* ptzcmd, int Horizontal_speed = 0, int Vertical_speed = 0, int Zoom_speed = 0);
+
 void Send_PtzControl_Single(eXosip_t* ex, CameraParam* camerapar, LiveVideoParams* livevideoparams, PTZ Ptz);
+
+void MsgProcess(eXosip_t* ex, LiveVideoParams* livevideoparams);
