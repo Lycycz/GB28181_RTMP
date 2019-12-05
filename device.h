@@ -33,7 +33,6 @@ protected:
 	std::string sip_;
 };
 
-
 class ReqCam :public Device {
 public:
 	ReqCam(std::string sip) :Device(sip) {}

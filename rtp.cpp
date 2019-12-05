@@ -69,6 +69,9 @@ AVFormatContext* Init_ofmt_ctx(CameraParam* camerapar) {
 
 	AVStream* in_stream = ifmt_ctx->streams[0];
 	AVCodecParameters* in_codecpar = in_stream->codecpar;
+	
+	AVPacket packet;
+	av_read_frame(ifmt_ctx, &packet);
 
 	AVStream* out_stream = avformat_new_stream(ofmt_ctx, NULL);
 	if (!out_stream) {
@@ -77,6 +80,9 @@ AVFormatContext* Init_ofmt_ctx(CameraParam* camerapar) {
 	}
 	ret = avcodec_parameters_copy(out_stream->codecpar, in_codecpar);
 	av_dump_format(ofmt_ctx, 0, out_filename, 1);
+
+	//out_stream->time_base = in_stream->time_base;
+
 
 	if (!(ofmt->flags & AVFMT_NOFILE)) {
 		ret = avio_open(&ofmt_ctx->pb, out_filename, AVIO_FLAG_WRITE);
@@ -187,7 +193,9 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 	memset(returnps, 0, sizeof(returnps));
 
 	i = 0;
+	int firstflag = 0;
 
+	int64_t start_time = av_gettime();
 	while (camerapar->played && camerapar->alive)
 	{
 		sess.BeginDataAccess();
@@ -214,14 +222,13 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 								}) + pack->GetPayloadLength();
 								std::cout << frame_len << std::endl;
 								
-								
 								int size = 0;
-
+								
 								for (auto i : FrameVector) {
 									memcpy(frame + size, i.data, i.size);
 									size += i.size;
 								}
-
+								
 								memcpy(frame + size, pack->GetPayloadData() , pack->GetPayloadLength());
 								/*std::cout << pack->GetPayloadData() << std::endl;
 								std::cout << frame + size << std::endl;*/
@@ -243,7 +250,14 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 								packet.pos = -1;
 								packet.side_data = nullptr;
 								packet.side_data_elems = 0;
+
+								int64_t now_time = av_gettime() - start_time;
+								LOG(INFO) << now_time;
+								if (packet.pts > now_time) {
+									av_usleep(packet.pts - now_time);
+								}
 								
+								if (flag) firstflag = 1;
 								// AVFormatContext* ic = nullptr;
 								// AVIOContext* pb = NULL;
 								// AVInputFormat* piFmt = NULL;
@@ -267,7 +281,8 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 								//av_read_frame(ic, &packet);
 
 								// out_stream = ofmt_ctx->streams[packet.stream_index];
-								ret = av_interleaved_write_frame(ofmt_ctx, &packet);
+								if(firstflag)
+									ret = av_interleaved_write_frame(ofmt_ctx, &packet);
 								
 								//av_packet_from_data(packet, reinterpret_cast<uint8_t*>(h264buffer), iPsLength);
 
@@ -281,8 +296,8 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 									
 								for (int i = 0; i < FrameVector.size(); i++) {
 									if (FrameVector[i].data != nullptr) {
-										FrameVector[i].data = nullptr;
 										delete[] FrameVector[i].data;
+										FrameVector[i].data = nullptr;
 									}
 								}
 								FrameVector.clear();
@@ -305,6 +320,7 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 								char* tmp = new char[pack->GetPayloadLength()];
 								memcpy(tmp, pack->GetPayloadData(), pack->GetPayloadLength());
 								FrameVector.push_back(Frame{ static_cast<int>(pack->GetPayloadLength()), tmp });
+								//delete[] tmp;
 							//}
 						}
 					}

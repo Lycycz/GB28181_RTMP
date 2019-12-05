@@ -38,7 +38,7 @@ const char* whitespace_cb(mxml_node_t* node, int where)
 	return NULL;
 }
 
-void ReadCfg(std::string cfgpath, LiveVideoParams&livevideoparams)
+void LiveVideoParams::ReadCfg(std::string cfgpath, LiveVideoParams&livevideoparams)
 {
 	libconfig::Config config;
 	config.readFile(cfgpath.c_str());
@@ -64,9 +64,8 @@ void ReadCfg(std::string cfgpath, LiveVideoParams&livevideoparams)
 		campar.cateloged = 0;
 		campar.played = 0;
 		campar.pushed = 0;
-		livevideoparams.CameraParams.push_back(campar);
+		livevideoparams.CameraParams.camparlist.push_back(campar);
 	}
-
 }
 
 static void GetCmdType(char* xmlcontent, std::string& CmdValue, std::string& CmdType) {
@@ -100,15 +99,15 @@ static void RegisterSuccess(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVide
 	}
 
 	std::string username = je->request->from->url->username;
-	auto it = livevideoparams->FindSipIndex(username, livevideoparams->CameraParams);
-	if (it >= 0 && (livevideoparams->CameraParams[it].alive != 1 ||
-		livevideoparams->CameraParams[it].registered != 1))
+	auto it = livevideoparams->FindSipIndex(username, livevideoparams->CameraParams.camparlist);
+	if (it >= 0 && (livevideoparams->CameraParams.camparlist[it].alive != 1 ||
+		livevideoparams->CameraParams.camparlist[it].registered != 1))
 	{
-		livevideoparams->mutex_.Lock();
 		//livevideoparams->LVPcondvar.Wait();
-		livevideoparams->CameraParams[it].alive = 1;
-		livevideoparams->CameraParams[it].registered = 1;
-		livevideoparams->mutex_.Unlock();
+		livevideoparams->CameraParams.mutex_.Lock();
+		livevideoparams->CameraParams.camparlist[it].alive = 1;
+		livevideoparams->CameraParams.camparlist[it].registered = 1;
+		livevideoparams->CameraParams.mutex_.Unlock();
 	}
 }
 
@@ -151,12 +150,7 @@ static std::vector<Client> Msg_Camera_Query_Response_Fun(eXosip_event_t* je,
 	std::string CamIp = je->request->from->url->host;
 	std::string CamPort = je->request->from->url->port;
 
-	std::vector<ClientInfo> clientlist;
-	std::vector<Client> clientlist1;
-
-	clientlist1 = livevideoparams->clientlist.DelClientReq(CamSip, CmdType);
-
-	return clientlist1;
+	return livevideoparams->clientlist.DelClientReq(CamSip, CmdType);
 }
 
 // 将查询插入到列表，等待发送
@@ -182,10 +176,10 @@ static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVi
 	if (body != nullptr) {
 		GetCmdType(body->body, CmdValue, CmdType);
 		GetDeviceId(body->body, DeviceID);
-		int cam_index = livevideoparams->FindSipIndex(DeviceID, livevideoparams->CameraParams);
+		int cam_index = livevideoparams->FindSipIndex(DeviceID, livevideoparams->CameraParams.camparlist);
 		CameraParam* campar;
 		if (cam_index >= 0)
-			campar = &livevideoparams->CameraParams[cam_index];
+			campar = &livevideoparams->CameraParams.camparlist[cam_index];
 		else
 			return -1;
 
@@ -196,9 +190,9 @@ static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVi
 		else if (strstr(CmdValue.c_str(), "Query") != nullptr) {
 			//std::string Sendsip = je->request->to->url->username;
 			// 摄像头发出的查询结果
-			int index = livevideoparams->FindSipIndex(DeviceID, livevideoparams->CameraParams);
+			int index = livevideoparams->FindSipIndex(DeviceID, livevideoparams->CameraParams.camparlist);
 			if (index >= 0) {
-				CameraParam cam = livevideoparams->CameraParams[index];
+				CameraParam cam = livevideoparams->CameraParams.camparlist[index];
 				Msg_Client_Query_Request_Fun(je, livevideoparams, CmdType, DeviceID);
 				Msg_Forward(peCtx, cam.Sip, cam.Ip, cam.port, body->body, livevideoparams);
 
@@ -213,10 +207,10 @@ static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVi
 		else if (strstr(CmdValue.c_str(), "Notify") != nullptr) {
 			if (strstr(CmdType.c_str(), "Keeplive") != nullptr) {
 				//std::unique_lock<std::mutex> l(livevideoparams->mut);
-				livevideoparams->mutex_.Lock();
-				livevideoparams->CameraParams[cam_index].alive = 1;
-				livevideoparams->CameraParams[cam_index].registered = 1;
-				livevideoparams->mutex_.Unlock();
+				livevideoparams->CameraParams.mutex_.Lock();
+				livevideoparams->CameraParams.camparlist[cam_index].alive = 1;
+				livevideoparams->CameraParams.camparlist[cam_index].registered = 1;
+				livevideoparams->CameraParams.mutex_.Unlock();
 			}
 		}
 		else if (strstr(CmdValue.c_str(), "EasyControl") != nullptr) {
@@ -313,16 +307,16 @@ void MsgProcess(eXosip_t* ex, LiveVideoParams* livevideoparams)
 			else if (MSG_IS_BYE(je->request)) {
 				printf("recv bye \n");
 				std::string username = je->request->from->url->username;
-				livevideoparams->mutex_.Lock();
-				auto it = livevideoparams->FindSipIndex(username, livevideoparams->CameraParams);
-				if (it >= 0 && (livevideoparams->CameraParams[it].alive != 0 ||
-					livevideoparams->CameraParams[it].registered != 0))
+				auto it = livevideoparams->FindSipIndex(username, livevideoparams->CameraParams.camparlist);
+				if (it >= 0 && (livevideoparams->CameraParams.camparlist[it].alive != 0 ||
+					livevideoparams->CameraParams.camparlist[it].registered != 0))
 				{
 					//livevideoparams->LVPcondvar.Wait();
-					livevideoparams->CameraParams[it].alive = 0;
-					livevideoparams->CameraParams[it].played = 0;
+					livevideoparams->CameraParams.mutex_.Lock();
+					livevideoparams->CameraParams.camparlist[it].alive = 0;
+					livevideoparams->CameraParams.camparlist[it].played = 0;
+					livevideoparams->CameraParams.mutex_.Unlock();
 				}
-				livevideoparams->mutex_.Unlock();
 			}
 			else
 			{
@@ -403,7 +397,7 @@ void SendThread(eXosip_t* ex, LiveVideoParams* livevideoparams) {
 void Send_Catalogs(eXosip_t* ex, LiveVideoParams* livevideoparams) {
 	int num = livevideoparams->CameraNum;
 	for (auto i = 0; i < num; i++) {
-		CameraParam* camerpar = &livevideoparams->CameraParams[i];
+		CameraParam* camerpar = &livevideoparams->CameraParams.camparlist[i];
 		if(camerpar->registered && !camerpar->cateloged)
 			Send_Catalog_Single(ex, camerpar, livevideoparams);
 	}
@@ -544,13 +538,11 @@ void Send_DeviceInfo_Single(eXosip_t* ex, CameraParam* camerapar, LiveVideoParam
 void Send_Invite_Play(eXosip_t* ex, LiveVideoParams* livevideoparams) {
 	int num = livevideoparams->CameraNum;
 	for (auto i = 0; i < num; i++) {
-		CameraParam* camerpar = &livevideoparams->CameraParams[i];
+		CameraParam* camerpar = &livevideoparams->CameraParams.camparlist[i];
 		if (camerpar->registered && !camerpar->played) {
 			Send_Invite_Play_Single(ex, camerpar, livevideoparams);
 
-			livevideoparams->mutex_.Lock();
 			camerpar->played = 1;
-			livevideoparams->mutex_.Unlock();
 		}
 	}
 }

@@ -82,6 +82,13 @@ public:
 	void push_stream();
 };
 
+class CameraParamList {
+public:
+	std::vector<CameraParam> camparlist;
+	Mutex mutex_;
+};
+
+
 struct gb28181Params {
 	std::string localSipId;		//服务器sip
 	std::string localIpAddr;	//服务器ip
@@ -89,44 +96,25 @@ struct gb28181Params {
 	int SN;						//服务器消息sn码，从1递增
 };
 
-struct ReqCamInfo {
-	std::string Sip;
-	std::vector<std::string> req;
-};
-
-struct ClientInfo {
-	std::string Sip;
-	std::string Ip;
-	std::string port;
-	std::vector<ReqCamInfo> ReqCam;
-};
-
 class LiveVideoParams {
 public:
-	LiveVideoParams() : LVPcondvar(&mutex_), CameraNum(0), StreamType(0) {};
+	LiveVideoParams() : CameraNum(0), StreamType(0) {};
 
 	int CameraNum;
-	std::vector<CameraParam> CameraParams;
+	CameraParamList CameraParams;
 	gb28181Params gb28181params;
-	// sip clientinfo
-	std::vector<ClientInfo> clients;
 
 	ClientList clientlist;
 	// 流类型
 	int StreamType;
-	
-	//std::mutex mut;
-	Mutex mutex_;
-	CondVar LVPcondvar; // unused
 
 	// according sip search device(camera or client)
 	// return: index of vec contains Sip
 	//			-1 if not in CameraParams
 	template<class C>
 	int FindSipIndex(std::string sipid, C vec);
+	static void ReadCfg(std::string cfgpath, LiveVideoParams& livevideoparams);
 };
-
-void ReadCfg(std::string cfgpath, LiveVideoParams& livevideoparams);
 
 const char* whitespace_cb(mxml_node_t* node, int where);
 
