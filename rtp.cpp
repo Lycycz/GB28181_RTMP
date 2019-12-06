@@ -221,15 +221,15 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 									return sum + a.size;
 								}) + pack->GetPayloadLength();
 								std::cout << frame_len << std::endl;
-								
+
 								int size = 0;
-								
+
 								for (auto i : FrameVector) {
 									memcpy(frame + size, i.data, i.size);
 									size += i.size;
 								}
-								
-								memcpy(frame + size, pack->GetPayloadData() , pack->GetPayloadLength());
+
+								memcpy(frame + size, pack->GetPayloadData(), pack->GetPayloadLength());
 								/*std::cout << pack->GetPayloadData() << std::endl;
 								std::cout << frame + size << std::endl;*/
 								int iPsLength;
@@ -256,7 +256,7 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 								if (packet.pts > now_time) {
 									av_usleep(packet.pts - now_time);
 								}
-								
+
 								if (flag) firstflag = 1;
 								// AVFormatContext* ic = nullptr;
 								// AVIOContext* pb = NULL;
@@ -281,9 +281,9 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 									//av_read_frame(ic, &packet);
 
 								// out_stream = ofmt_ctx->streams[packet.stream_index];
-								if(firstflag)
+								if (firstflag)
 									ret = av_interleaved_write_frame(ofmt_ctx, &packet);
-								
+
 								//av_packet_from_data(packet, reinterpret_cast<uint8_t*>(h264buffer), iPsLength);
 
 									/*
@@ -291,9 +291,9 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 									int ret;
 									*/
 
-								//ret = avcodec_send_packet(codecCtx, packet);
-								//ret = avcodec_receive_frame(codecCtx, avframe);
-									
+									//ret = avcodec_send_packet(codecCtx, packet);
+									//ret = avcodec_receive_frame(codecCtx, avframe);
+
 								for (int i = 0; i < FrameVector.size(); i++) {
 									if (FrameVector[i].data != nullptr) {
 										delete[] FrameVector[i].data;
@@ -301,9 +301,9 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 									}
 								}
 								FrameVector.clear();
-							}
+						}
 						else {
-							/*	
+							/*
 							if (pack->GetPacketData()[12] == 0x00 && pack->GetPacketData()[13] == 0x00 &&
 								pack->GetPacketData()[14] == 0x01 && pack->GetPacketData()[15] == 0xc0)
 							{
@@ -314,14 +314,14 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 									{
 
 							}
-							
+
 							else {
 							*/
-								char* tmp = new char[pack->GetPayloadLength()];
-								memcpy(tmp, pack->GetPayloadData(), pack->GetPayloadLength());
-								FrameVector.push_back(Frame{ static_cast<int>(pack->GetPayloadLength()), tmp });
-								//delete[] tmp;
-							//}
+							char* tmp = new char[pack->GetPayloadLength()];
+							memcpy(tmp, pack->GetPayloadData(), pack->GetPayloadLength());
+							FrameVector.push_back(Frame{ static_cast<int>(pack->GetPayloadLength()), tmp });
+							//delete[] tmp;
+						//}
 						}
 					}
 					else {
@@ -331,32 +331,28 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 					std::cout << int(pack->GetPayloadLength()) << std::endl;
 					if (pack->HasMarker())
 						std::cout << "maker" << std::endl;
-						// fwrite(pack->GetPayloadData(), 1, pack->GetPayloadLength(), fpH264);
+					// fwrite(pack->GetPayloadData(), 1, pack->GetPayloadLength(), fpH264);
 
 					// we don't longer need the packet, so
 					// we'll delete it
-						sess.DeletePacket(pack);
-					}
+					sess.DeletePacket(pack);
+
 				}
 
 			} while (sess.GotoNextSourceWithData());
 
-			sess.EndDataAccess();
+		}	sess.EndDataAccess();
 
 #ifndef RTP_SUPPORT_THREAD
-			status = sess.Poll();
-			checkerror(status);
+		status = sess.Poll();
+		checkerror(status);
 #endif // RTP_SUPPORT_THREAD
 
-			//jrtplib::RTPTime::Wait(jrtplib::RTPTime(10, 0));
-		}
-
-		delete[] frame;
-		delete[] returnps;
-
+		//jrtplib::RTPTime::Wait(jrtplib::RTPTime(10, 0));
+	}
+	delete[] frame;
+	delete[] returnps;
 #ifdef RTP_SOCKETTYPE_WINSOCK
 		WSACleanup();
 #endif // RTP_SOCKETTYPE_WINSOCK
-	}
-
 }
