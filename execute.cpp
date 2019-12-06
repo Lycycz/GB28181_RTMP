@@ -10,8 +10,6 @@ int main(int argc, char** argv)
 	google::InitGoogleLogging(argv[0]);
 	google::SetLogDestination(google::GLOG_INFO, "./log/");
 #endif
-
-
 	int ret = 0;
 	osip_message_t* reg = NULL;
 	osip_message_t* answer = NULL;
@@ -27,7 +25,7 @@ int main(int argc, char** argv)
 	ret = eXosip_init(ex);
 	ret = eXosip_listen_addr(ex, IPPROTO_UDP, NULL, 5060, AF_INET, 0);
 
-	ReadCfg("E:/tmp_project/gb28281_demo/GB28181.txt", Singleton<LiveVideoParams>::Instance());
+	LiveVideoParams::ReadCfg("E:/tmp_project/gb28281_demo/GB28181.txt", Singleton<LiveVideoParams>::Instance());
 
 	//sprintf(from, "sip:%s@%s", DEV_ID, DEV_IP);
 	//sprintf(proxy, "sip:%s@%s:%d", SERVER_ID, SERVER_IP, SERVER_PORT);
@@ -69,13 +67,13 @@ int main(int argc, char** argv)
 	
 	// Send_Catalog_Single(ex, &livevideoparams.CameraParams[0], livevideoparams.gb28181params);
 
-	//Sleep(5000);
-	//Send_Invite_Play(ex, &Singleton<LiveVideoParams>::Instance());
-	//Sleep(1000);
+	Sleep(5000);
+	Send_Invite_Play(ex, &Singleton<LiveVideoParams>::Instance());
+	Sleep(1000);
 
 	while (1)
 	{
-		for (auto& i : Singleton<LiveVideoParams>::Instance().CameraParams) {
+		for (auto& i : Singleton<LiveVideoParams>::Instance().CameraParams.camparlist) {
 			if (i.alive && i.played && !i.pushed)
 			{
 				std::thread t1(std::mem_fn(&CameraParam::push_stream), i);

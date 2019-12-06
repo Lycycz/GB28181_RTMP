@@ -69,6 +69,9 @@ AVFormatContext* Init_ofmt_ctx(CameraParam* camerapar) {
 
 	AVStream* in_stream = ifmt_ctx->streams[0];
 	AVCodecParameters* in_codecpar = in_stream->codecpar;
+	
+	AVPacket packet;
+	av_read_frame(ifmt_ctx, &packet);
 
 	AVStream* out_stream = avformat_new_stream(ofmt_ctx, NULL);
 	if (!out_stream) {
@@ -77,6 +80,9 @@ AVFormatContext* Init_ofmt_ctx(CameraParam* camerapar) {
 	}
 	ret = avcodec_parameters_copy(out_stream->codecpar, in_codecpar);
 	av_dump_format(ofmt_ctx, 0, out_filename, 1);
+
+	//out_stream->time_base = in_stream->time_base;
+
 
 	if (!(ofmt->flags & AVFMT_NOFILE)) {
 		ret = avio_open(&ofmt_ctx->pb, out_filename, AVIO_FLAG_WRITE);
@@ -187,7 +193,9 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 	memset(returnps, 0, sizeof(returnps));
 
 	i = 0;
+	int firstflag = 0;
 
+	int64_t start_time = av_gettime();
 	while (camerapar->played && camerapar->alive)
 	{
 		sess.BeginDataAccess();
@@ -247,11 +255,12 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 								LOG(INFO) << now_time;
 								if (packet.pts > now_time) {
 									av_usleep(packet.pts - now_time);
+								}
 
-									if (flag) firstflag = 1;
-									// AVFormatContext* ic = nullptr;
-									// AVIOContext* pb = NULL;
-									// AVInputFormat* piFmt = NULL;
+								if (flag) firstflag = 1;
+								// AVFormatContext* ic = nullptr;
+								// AVIOContext* pb = NULL;
+								// AVInputFormat* piFmt = NULL;
 
 									/*
 									ic = avformat_alloc_context();
@@ -271,11 +280,11 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 									// AVPacket packet;
 									//av_read_frame(ic, &packet);
 
-									// out_stream = ofmt_ctx->streams[packet.stream_index];
-									if (firstflag)
-										ret = av_interleaved_write_frame(ofmt_ctx, &packet);
+								// out_stream = ofmt_ctx->streams[packet.stream_index];
+								if (firstflag)
+									ret = av_interleaved_write_frame(ofmt_ctx, &packet);
 
-									//av_packet_from_data(packet, reinterpret_cast<uint8_t*>(h264buffer), iPsLength);
+								//av_packet_from_data(packet, reinterpret_cast<uint8_t*>(h264buffer), iPsLength);
 
 									/*
 									AVFrame* avframe = av_frame_alloc();
@@ -285,69 +294,65 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 									//ret = avcodec_send_packet(codecCtx, packet);
 									//ret = avcodec_receive_frame(codecCtx, avframe);
 
-									for (int i = 0; i < FrameVector.size(); i++) {
-										if (FrameVector[i].data != nullptr) {
-											delete[] FrameVector[i].data;
-											FrameVector[i].data = nullptr;
-										}
+								for (int i = 0; i < FrameVector.size(); i++) {
+									if (FrameVector[i].data != nullptr) {
+										delete[] FrameVector[i].data;
+										FrameVector[i].data = nullptr;
 									}
-									FrameVector.clear();
 								}
-								else {
-									/*
-									if (pack->GetPacketData()[12] == 0x00 && pack->GetPacketData()[13] == 0x00 &&
-										pack->GetPacketData()[14] == 0x01 && pack->GetPacketData()[15] == 0xc0)
-									{
+								FrameVector.clear();
+						}
+						else {
+							/*
+							if (pack->GetPacketData()[12] == 0x00 && pack->GetPacketData()[13] == 0x00 &&
+								pack->GetPacketData()[14] == 0x01 && pack->GetPacketData()[15] == 0xc0)
+							{
 
 									}
 									else if (pack->GetPacketData()[12] == 0x00 && pack->GetPacketData()[13] == 0x00 &&
 										pack->GetPacketData()[14] == 0x01 && pack->GetPacketData()[15] == 0xbd)
 									{
 
-									}
+							}
 
-									else {
-									*/
-									char* tmp = new char[pack->GetPayloadLength()];
-									memcpy(tmp, pack->GetPayloadData(), pack->GetPayloadLength());
-									FrameVector.push_back(Frame{ static_cast<int>(pack->GetPayloadLength()), tmp });
-									//delete[] tmp;
-								//}
-								}
+							else {
+							*/
+							char* tmp = new char[pack->GetPayloadLength()];
+							memcpy(tmp, pack->GetPayloadData(), pack->GetPayloadLength());
+							FrameVector.push_back(Frame{ static_cast<int>(pack->GetPayloadLength()), tmp });
+							//delete[] tmp;
+						//}
 						}
-						else {
-							std::cout << "no" << std::endl;
-						}
-						//写入文件
-						std::cout << int(pack->GetPayloadLength()) << std::endl;
-						if (pack->HasMarker())
-							std::cout << "maker" << std::endl;
-						// fwrite(pack->GetPayloadData(), 1, pack->GetPayloadLength(), fpH264);
+					}
+					else {
+						std::cout << "no" << std::endl;
+					}
+					//写入文件
+					std::cout << int(pack->GetPayloadLength()) << std::endl;
+					if (pack->HasMarker())
+						std::cout << "maker" << std::endl;
+					// fwrite(pack->GetPayloadData(), 1, pack->GetPayloadLength(), fpH264);
 
 					// we don't longer need the packet, so
 					// we'll delete it
-						sess.DeletePacket(pack);
-					}
+					sess.DeletePacket(pack);
+
 				}
 
 			} while (sess.GotoNextSourceWithData());
 
-			sess.EndDataAccess();
+		}	sess.EndDataAccess();
 
 #ifndef RTP_SUPPORT_THREAD
-			status = sess.Poll();
-			checkerror(status);
+		status = sess.Poll();
+		checkerror(status);
 #endif // RTP_SUPPORT_THREAD
 
-			//jrtplib::RTPTime::Wait(jrtplib::RTPTime(10, 0));
-		}
-
-		delete[] frame;
-		delete[] returnps;
-
+		//jrtplib::RTPTime::Wait(jrtplib::RTPTime(10, 0));
+	}
+	delete[] frame;
+	delete[] returnps;
 #ifdef RTP_SOCKETTYPE_WINSOCK
 		WSACleanup();
 #endif // RTP_SOCKETTYPE_WINSOCK
-	}
-
 }
