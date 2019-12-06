@@ -155,7 +155,7 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 	if (ret < 0) {
 		printf("Error occurred when opening output URL\n");
 	}
-	
+
 #ifdef RTP_SOCKETTYPE_WINSOCK
 	WSADATA dat;
 	WSAStartup(MAKEWORD(2, 2), &dat);
@@ -183,7 +183,7 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 
 	char* frame = new char[1024 * 100];
 	memset(frame, 0, sizeof(frame));
-	char* returnps = new char[1024* 100];
+	char* returnps = new char[1024 * 100];
 	memset(returnps, 0, sizeof(returnps));
 
 	i = 0;
@@ -213,8 +213,7 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 									return sum + a.size;
 								}) + pack->GetPayloadLength();
 								std::cout << frame_len << std::endl;
-								
-								
+
 								int size = 0;
 
 								for (auto i : FrameVector) {
@@ -222,20 +221,20 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 									size += i.size;
 								}
 
-								memcpy(frame + size, pack->GetPayloadData() , pack->GetPayloadLength());
+								memcpy(frame + size, pack->GetPayloadData(), pack->GetPayloadLength());
 								/*std::cout << pack->GetPayloadData() << std::endl;
 								std::cout << frame + size << std::endl;*/
 								int iPsLength;
 								int pts;
 								int flag;
-								
+
 								GetH246FromPs(frame, frame_len, &returnps, &iPsLength, pts, flag);
-								
+
 								AVPacket packet;
 								packet.buf = nullptr;
 								packet.data = reinterpret_cast<uint8_t*>(returnps);
 								packet.size = iPsLength;
-								packet.dts = pts * av_q2d(AVRational{ 1, 90000 }) / av_q2d(AVRational{1, 1000});
+								packet.dts = pts * av_q2d(AVRational{ 1, 90000 }) / av_q2d(AVRational{ 1, 1000 });
 								packet.pts = packet.dts;
 								packet.flags = flag;
 								packet.stream_index = 0;
@@ -243,103 +242,112 @@ void jrtplib_rtp_recv_thread(CameraParam* camerapar) {
 								packet.pos = -1;
 								packet.side_data = nullptr;
 								packet.side_data_elems = 0;
-								
-								// AVFormatContext* ic = nullptr;
-								// AVIOContext* pb = NULL;
-								// AVInputFormat* piFmt = NULL;
 
-								/*
-								ic = avformat_alloc_context();
-								int BUF_SIZE = 4096*20;
-								Frame tmpbuffer{ iPsLength, h264buffer };
-								uint8_t* buf = (uint8_t*)av_mallocz(sizeof(uint8_t) * BUF_SIZE);
-								pb = avio_alloc_context(buf, BUF_SIZE, 0, &tmpbuffer, read_data, NULL, NULL);
-								ic->pb = pb;
-								
-								if (av_probe_input_buffer(pb, &piFmt, "", NULL, 0, 0) < 0)
-								{
-									fprintf(stderr, "probe format failed\n");
-								}
-								ret = avformat_open_input(&ic, "", piFmt, NULL);
-								*/
+								int64_t now_time = av_gettime() - start_time;
+								LOG(INFO) << now_time;
+								if (packet.pts > now_time) {
+									av_usleep(packet.pts - now_time);
 
-								// AVPacket packet;
-								//av_read_frame(ic, &packet);
+									if (flag) firstflag = 1;
+									// AVFormatContext* ic = nullptr;
+									// AVIOContext* pb = NULL;
+									// AVInputFormat* piFmt = NULL;
 
-								// out_stream = ofmt_ctx->streams[packet.stream_index];
-								ret = av_interleaved_write_frame(ofmt_ctx, &packet);
-								
-								//av_packet_from_data(packet, reinterpret_cast<uint8_t*>(h264buffer), iPsLength);
+									/*
+									ic = avformat_alloc_context();
+									int BUF_SIZE = 4096*20;
+									Frame tmpbuffer{ iPsLength, h264buffer };
+									uint8_t* buf = (uint8_t*)av_mallocz(sizeof(uint8_t) * BUF_SIZE);
+									pb = avio_alloc_context(buf, BUF_SIZE, 0, &tmpbuffer, read_data, NULL, NULL);
+									ic->pb = pb;
 
-								/*
-								AVFrame* avframe = av_frame_alloc();
-								int ret;
-								*/
-
-								//ret = avcodec_send_packet(codecCtx, packet);
-								//ret = avcodec_receive_frame(codecCtx, avframe);
-									
-								for (int i = 0; i < FrameVector.size(); i++) {
-									if (FrameVector[i].data != nullptr) {
-										FrameVector[i].data = nullptr;
-										delete[] FrameVector[i].data;
+									if (av_probe_input_buffer(pb, &piFmt, "", NULL, 0, 0) < 0)
+									{
+										fprintf(stderr, "probe format failed\n");
 									}
+									ret = avformat_open_input(&ic, "", piFmt, NULL);
+									*/
+
+									// AVPacket packet;
+									//av_read_frame(ic, &packet);
+
+									// out_stream = ofmt_ctx->streams[packet.stream_index];
+									if (firstflag)
+										ret = av_interleaved_write_frame(ofmt_ctx, &packet);
+
+									//av_packet_from_data(packet, reinterpret_cast<uint8_t*>(h264buffer), iPsLength);
+
+									/*
+									AVFrame* avframe = av_frame_alloc();
+									int ret;
+									*/
+
+									//ret = avcodec_send_packet(codecCtx, packet);
+									//ret = avcodec_receive_frame(codecCtx, avframe);
+
+									for (int i = 0; i < FrameVector.size(); i++) {
+										if (FrameVector[i].data != nullptr) {
+											delete[] FrameVector[i].data;
+											FrameVector[i].data = nullptr;
+										}
+									}
+									FrameVector.clear();
 								}
-								FrameVector.clear();
-							}
-						else {
-							/*	
-							if (pack->GetPacketData()[12] == 0x00 && pack->GetPacketData()[13] == 0x00 &&
-								pack->GetPacketData()[14] == 0x01 && pack->GetPacketData()[15] == 0xc0)
-							{
+								else {
+									/*
+									if (pack->GetPacketData()[12] == 0x00 && pack->GetPacketData()[13] == 0x00 &&
+										pack->GetPacketData()[14] == 0x01 && pack->GetPacketData()[15] == 0xc0)
+									{
 
-							}
-							else if (pack->GetPacketData()[12] == 0x00 && pack->GetPacketData()[13] == 0x00 &&
-								pack->GetPacketData()[14] == 0x01 && pack->GetPacketData()[15] == 0xbd)
-							{
+									}
+									else if (pack->GetPacketData()[12] == 0x00 && pack->GetPacketData()[13] == 0x00 &&
+										pack->GetPacketData()[14] == 0x01 && pack->GetPacketData()[15] == 0xbd)
+									{
 
-							}
-							
-							else {
-							*/
-								char* tmp = new char[pack->GetPayloadLength()];
-								memcpy(tmp, pack->GetPayloadData(), pack->GetPayloadLength());
-								FrameVector.push_back(Frame{ static_cast<int>(pack->GetPayloadLength()), tmp });
-							//}
+									}
+
+									else {
+									*/
+									char* tmp = new char[pack->GetPayloadLength()];
+									memcpy(tmp, pack->GetPayloadData(), pack->GetPayloadLength());
+									FrameVector.push_back(Frame{ static_cast<int>(pack->GetPayloadLength()), tmp });
+									//delete[] tmp;
+								//}
+								}
 						}
-					}
-					else {
-						std::cout << "no" << std::endl;
-					}
-					//写入文件
-					std::cout << int(pack->GetPayloadLength()) << std::endl;
-					if (pack->HasMarker())
-						std::cout << "maker" << std::endl;
+						else {
+							std::cout << "no" << std::endl;
+						}
+						//写入文件
+						std::cout << int(pack->GetPayloadLength()) << std::endl;
+						if (pack->HasMarker())
+							std::cout << "maker" << std::endl;
 						// fwrite(pack->GetPayloadData(), 1, pack->GetPayloadLength(), fpH264);
-					
+
 					// we don't longer need the packet, so
 					// we'll delete it
-					sess.DeletePacket(pack);
+						sess.DeletePacket(pack);
+					}
 				}
 
 			} while (sess.GotoNextSourceWithData());
-		}
 
 			sess.EndDataAccess();
 
-	#ifndef RTP_SUPPORT_THREAD
+#ifndef RTP_SUPPORT_THREAD
 			status = sess.Poll();
 			checkerror(status);
-	#endif // RTP_SUPPORT_THREAD
+#endif // RTP_SUPPORT_THREAD
 
 			//jrtplib::RTPTime::Wait(jrtplib::RTPTime(10, 0));
+		}
+
+		delete[] frame;
+		delete[] returnps;
+
+#ifdef RTP_SOCKETTYPE_WINSOCK
+		WSACleanup();
+#endif // RTP_SOCKETTYPE_WINSOCK
 	}
 
-	delete[]frame;
-	delete[]returnps;
-	
-#ifdef RTP_SOCKETTYPE_WINSOCK
-	WSACleanup();
-#endif // RTP_SOCKETTYPE_WINSOCK
 }
-
