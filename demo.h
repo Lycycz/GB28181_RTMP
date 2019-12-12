@@ -88,7 +88,6 @@ public:
 	Mutex mutex_;
 };
 
-
 struct gb28181Params {
 	std::string localSipId;		//服务器sip
 	std::string localIpAddr;	//服务器ip
@@ -101,9 +100,12 @@ public:
 	LiveVideoParams() : CameraNum(0), StreamType(0) {};
 
 	int CameraNum;
+	// contains mutex control
 	CameraParamList CameraParams;
+	// server pararms
 	gb28181Params gb28181params;
 
+	// contains mutex control
 	ClientList clientlist;
 	// 流类型
 	int StreamType;
@@ -118,7 +120,8 @@ public:
 
 const char* whitespace_cb(mxml_node_t* node, int where);
 
-static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVideoParams* livevideoparams);
+static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je,
+	LiveVideoParams* livevideoparams);
 
 void Send_Catalogs(eXosip_t* ex, LiveVideoParams* livedioparams);
 
