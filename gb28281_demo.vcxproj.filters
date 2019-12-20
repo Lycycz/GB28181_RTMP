@@ -33,6 +33,12 @@
     <ClCompile Include="device.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="srs_librtmp.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="srs_push.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="demo.h">
@@ -57,6 +63,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="device.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="srs_push.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

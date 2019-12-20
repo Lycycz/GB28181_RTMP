@@ -162,6 +162,8 @@
     <ClCompile Include="PTZ.cpp" />
     <ClCompile Include="pugixml.cpp" />
     <ClCompile Include="rtp.cpp" />
+    <ClCompile Include="srs_librtmp.cpp" />
+    <ClCompile Include="srs_push.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="281_Message.h" />
@@ -171,6 +173,7 @@
     <ClInclude Include="PTZ.h" />
     <ClInclude Include="rtp.h" />
     <ClInclude Include="Singleton.h" />
+    <ClInclude Include="srs_push.h" />
     <ClInclude Include="stdafx.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

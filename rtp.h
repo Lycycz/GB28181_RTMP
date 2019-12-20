@@ -251,5 +251,6 @@ inline int GetH246FromPs(char* buffer,int length, char **h264Buffer, int *h264le
     return *h264length;
 }
 
+void checkerror(int rtperr);
 // ffmpeg进行推流
 void jrtplib_rtp_recv_thread(CameraParam* camerapar);

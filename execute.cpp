@@ -2,6 +2,7 @@
 #include "PTZ.h"
 #include "stdafx.h"
 #include "rtp.h"
+#include "srs_push.h"
 
 int main(int argc, char** argv)
 {
@@ -27,6 +28,11 @@ int main(int argc, char** argv)
 
 	LiveVideoParams::ReadCfg("E:/tmp_project/gb28281_demo/GB28181.txt", Singleton<LiveVideoParams>::Instance());
 
+	std::vector<CameraPush> push_vec;
+	for (auto& i : Singleton<LiveVideoParams>::Instance().CameraParams.camparlist) {
+		CameraPush cam(i);
+		push_vec.push_back(cam);
+	}
 	//sprintf(from, "sip:%s@%s", DEV_ID, DEV_IP);
 	//sprintf(proxy, "sip:%s@%s:%d", SERVER_ID, SERVER_IP, SERVER_PORT);
 	//sprintf(contact, "sip:%s@%s:%d", DEV_ID, DEV_IP, DEV_PORT);
@@ -73,7 +79,13 @@ int main(int argc, char** argv)
 
 	while (1)
 	{
+		for (auto& i : push_vec) {
+			std::thread t1(std::mem_fn(&CameraPush::Run), i);
+		}
+
+		/*
 		for (auto& i : Singleton<LiveVideoParams>::Instance().CameraParams.camparlist) {
+
 			if (i.alive && i.played && !i.pushed)
 			{
 				std::thread t1(std::mem_fn(&CameraParam::push_stream), i);
@@ -81,6 +93,7 @@ int main(int argc, char** argv)
 				t1.detach();
 			}
 		}
+		*/
 		Sleep(1000);
 	}
 

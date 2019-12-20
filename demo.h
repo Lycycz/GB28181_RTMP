@@ -5,7 +5,7 @@
 #include "Singleton.h"
 #include "device.h"
 
-#include <stdio.h>
+#include <cstdio>
 #include <winsock2.h>
 
 #include "osip2/osip_mt.h"
@@ -20,7 +20,7 @@
 #include "rtplibraryversion.h"
 
 
-#include <stdlib.h>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -28,10 +28,11 @@
 #include <algorithm>
 #include <cassert>
 #include <map>
+#include <list>
 
 #include <libconfig.h++>
 #include <mxml.h>
-#include <time.h>
+#include <ctime>
 #include <process.h>
 
 //#pragma comment(lib, "jrtplib_d.lib")
