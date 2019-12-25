@@ -171,6 +171,7 @@ void jrtplib_rtp_recv_thread(CameraParam *camerapar) {
   if (srs_rtmp_publish_stream(rtmp) != 0) {
       srs_human_trace("publish stream failed.");
   }
+  srs_human_trace("publish stream success");
    
 
   /*if (ret < 0) {

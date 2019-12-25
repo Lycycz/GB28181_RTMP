@@ -11,10 +11,6 @@
 #include "osip2/osip_mt.h"
 #include "eXosip2/eXosip.h"
 #include "pugixml.hpp"
-#ifdef _DEBUG
-#include "glog/logging.h"
-#pragma comment(lib, "glog.lib")
-#endif
 
 #include "rtpsession.h"
 #include "rtpudpv4transmitter.h"
@@ -39,7 +35,20 @@
 #include <ctime>
 #include <process.h>
 
-//#pragma comment(lib, "jrtplib_d.lib")
+#ifdef _DEBUG
+#include "glog/logging.h"
+#pragma comment(lib, "jrtplib_d.lib")
+#pragma comment(lib, "jthread_d.lib")
+#pragma comment(lib, "glog.lib")
+#elif
+#pragma comment(lib, "jrtplib.lib")
+#pragma comment(lib, "jthread.lib")
+#endif
+
+
+#ifdef _MSC_VER
+#pragma comment(lib, "legacy_stdio_definitions.lib")
+#endif
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "mxml1.lib")
 #pragma comment(lib, "eXosip.lib")
@@ -52,6 +61,15 @@
 #pragma comment(lib, "Qwave.lib")
 #pragma comment(lib, "delayimp.lib")
 #pragma comment(lib, "libconfig++.lib")
+
+#pragma comment(lib, "avcodec.lib")
+#pragma comment(lib, "avformat.lib")
+#pragma comment(lib, "avutil.lib")
+#pragma comment(lib, "avdevice.lib")
+#pragma comment(lib, "avfilter.lib")
+#pragma comment(lib, "postproc.lib")
+#pragma comment(lib, "swresample.lib")
+#pragma comment(lib, "swscale.lib")
 
 class CameraParam {
 public:

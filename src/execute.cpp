@@ -79,6 +79,7 @@ int main(int argc, char** argv)
 
 	while (1)
 	{
+		/*
 		for (auto& i : push_vec) {
 			auto param = i.GetParam();
 			if (param->alive && param->played && !param->pushed) {
@@ -89,8 +90,8 @@ int main(int argc, char** argv)
 				t1.detach();
 			}
 		}
+		*/
 
-		/*
 		for (auto& i : Singleton<LiveVideoParams>::Instance().CameraParams.camparlist) {
 
 			if (i.alive && i.played && !i.pushed)
@@ -100,7 +101,6 @@ int main(int argc, char** argv)
 				t1.detach();
 			}
 		}
-		*/
 		Sleep(1000);
 	}
 
