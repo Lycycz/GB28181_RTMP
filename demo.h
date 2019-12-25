@@ -11,6 +11,10 @@
 #include "osip2/osip_mt.h"
 #include "eXosip2/eXosip.h"
 #include "pugixml.hpp"
+#ifdef _DEBUG
+#include "glog/logging.h"
+#pragma comment(lib, "glog.lib")
+#endif
 
 #include "rtpsession.h"
 #include "rtpudpv4transmitter.h"

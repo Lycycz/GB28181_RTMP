@@ -43,22 +43,25 @@ void CameraPush::SetParam(CameraParam& campar) {
 
 void CameraPush::Run() {
   std::thread t1 = std::thread(std::bind(&CameraPush::OnH264Data, this));
-  /*
+  std::thread t2;
   switch (push_type_) {
   case FFMPEG: {
-    push_stream_ffmpeg();
+      t2 = std::thread(std::bind(&CameraPush::push_stream_ffmpeg, this));
+    //push_stream_ffmpeg();
   } break;
   case SRS: {
-    push_stream_srs();
+      t2 = std::thread(std::bind(&CameraPush::push_stream_srs, this));
+    //push_stream_srs();
   } break;
   }
-  */
   t1.join();
+  t2.join();
 }
 
 void CameraPush::push_stream_srs() {
-  rtmp_ = srs_rtmp_create(campar_->StreamIp.c_str());
-  while (campar_->played && campar_->alive) {
+  //rtmp_ = srs_rtmp_create(campar_->StreamIp.c_str());
+  rtmp_ = srs_rtmp_create("rtmp://192.168.44.91/live/home");
+    while (campar_->played && campar_->alive) {
     if (rtmp_ != nullptr) {
       switch (rtmp_status_) {
       case RS_STM_Init: {
@@ -192,8 +195,11 @@ void CameraPush::GotH264Nal(uint8_t *pData, int nLen, uint32_t ts, bool flag) {
   pdata->_type = VIDEO_DATA;
   pdata->_dts = ts;
   pdata->flag = flag;
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::unique_lock<std::mutex> lock(mutex_);
   lst_enc_data_.push_back(pdata);
+  has_data_ = true;
+  lock.unlock();
+  cv_.notify_all();
 }
 
 void CameraPush::OnH264Data() {
@@ -270,7 +276,8 @@ void CameraPush::OnH264Data() {
               pts = pts * av_q2d(AVRational{1, 90000}) /
                      av_q2d(AVRational{1, 1000});
               */
-              pts = pts * 1/90000 *1/ 1000;
+              pts = pts * av_q2d(AVRational{ 1, 90000 }) /
+                  av_q2d(AVRational{ 1, 1000 });
               dts = pts;
 
               if (returnps[3] == '\x67' || returnps[3] == '\x61') {
@@ -283,7 +290,7 @@ void CameraPush::OnH264Data() {
                                   25, &data, &size);
                   u_int8_t nut = (char)data[nb_start_code] & 0x1f;
                   srs_human_trace(
-                      "sent packet: type=%s, time=%d, size=%d, fps=%.2f, "
+                      "recieve packet: type=%s, time=%d, size=%d, fps=%.2f, "
                       "b[%d]=%#x(%s)",
                       srs_human_flv_tag_type2string(SRS_RTMP_TYPE_VIDEO), pts,
                       size, 25.0, nb_start_code, (char)data[nb_start_code],
@@ -300,9 +307,10 @@ void CameraPush::OnH264Data() {
                                                        : (nut == 6 ? "SEI"
                                                                    : "Unknow"
                                                                      "n")))))));
-                  if (nut == 5) flag = 1;
-                  GotH264Nal(reinterpret_cast<uint8_t *>(data), size, pts,
-                             flag);
+                  if (nut == 7) need_keyframe_ = false;
+                  if (need_keyframe_) return;
+					GotH264Nal(reinterpret_cast<uint8_t*>(data), size, pts,
+						flag);
                 }
               }
 
@@ -366,11 +374,12 @@ void CameraPush::OnH264Data() {
 void CameraPush::srs_send_data() {
   EncData *dataPtr = nullptr;
   {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (lst_enc_data_.size() > 0) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    cv_.wait(lock, [=] {return has_data_; });
+    //if (lst_enc_data_.size() > 0) {
       dataPtr = lst_enc_data_.front();
       lst_enc_data_.pop_front();
-    }
+    //}
   }
   if (dataPtr != NULL) {
     if (dataPtr->_type == VIDEO_DATA) {
@@ -379,6 +388,9 @@ void CameraPush::srs_send_data() {
       int ret = 0;
       ret = srs_h264_write_raw_frames(rtmp_, ptr, len, dataPtr->_dts,
                                       dataPtr->_dts);
+#ifdef _DEBUG
+      LOG(INFO) << av_gettime();
+#endif
       if (ret != 0) {
         if (srs_h264_is_dvbsp_error(ret)) {
           srs_human_trace("ignore drop video error, code=%d", ret);

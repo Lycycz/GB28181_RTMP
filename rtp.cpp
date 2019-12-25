@@ -135,7 +135,7 @@ int read_h264_frame(char* data, int size, char** pp, int* pnb_start_code, int fp
 
 void jrtplib_rtp_recv_thread(CameraParam *camerapar) {
   int ret;
-  AVFormatContext *ofmt_ctx = Init_ofmt_ctx(camerapar);
+  // AVFormatContext *ofmt_ctx = Init_ofmt_ctx(camerapar);
 
   /* 计算 duration 和 framerate，暂时指定framerate为25帧，duration为40
   AVRational frame_rate;
@@ -151,8 +151,9 @@ void jrtplib_rtp_recv_thread(CameraParam *camerapar) {
   }
   */
 
-  //ret = avformat_write_header(ofmt_ctx, NULL);
+  // ret = avformat_write_header(ofmt_ctx, NULL);
 
+  
   const char* rtmp_url = "rtmp://192.168.44.91/live/home";
 
   srs_rtmp_t rtmp = srs_rtmp_create(rtmp_url);
@@ -170,6 +171,7 @@ void jrtplib_rtp_recv_thread(CameraParam *camerapar) {
   if (srs_rtmp_publish_stream(rtmp) != 0) {
       srs_human_trace("publish stream failed.");
   }
+   
 
   /*if (ret < 0) {
     printf("Error occurred when opening output URL\n");
@@ -252,8 +254,13 @@ void jrtplib_rtp_recv_thread(CameraParam *camerapar) {
               // 顺序读取出sps pps 和 i,p 数据
               // srs_h264_write_raw_frames 推流
               // 从srs_push.cpp 中写
+              
               int pts = 0;
               int dts = 0;
+              
+              int all_len = 0;
+
+              int sps_flag = 0;
               if (returnps[3] == '\x67' || returnps[3] == '\x61')
               {
                   char* p = returnps;
@@ -263,14 +270,29 @@ void jrtplib_rtp_recv_thread(CameraParam *camerapar) {
                       int size = 0;
                       int nb_start_code = 0;
                       read_h264_frame(returnps, (int)iPsLength, &p, &nb_start_code, 25, &data, &size, &dts, &pts);
+                      pts = pts_ / 90;
+                      dts = pts;
                       u_int8_t nut = (char)data[nb_start_code] & 0x1f;
-                      pts_ = pts_ * av_q2d(AVRational{ 1, 90000 }) /
-                          av_q2d(AVRational{ 1, 1000 });
-                      int dts_ = pts_;
-                      srs_human_trace("sent packet: type=%s, time=%d, size=%d, fps=%.2f, b[%d]=%#x(%s)",
-                          srs_human_flv_tag_type2string(SRS_RTMP_TYPE_VIDEO), pts_, size, 25, nb_start_code, (char)data[nb_start_code],
-                          (nut == 7 ? "SPS" : (nut == 8 ? "PPS" : (nut == 5 ? "I" : (nut == 1 ? "P" : (nut == 9 ? "AUD" : (nut == 6 ? "SEI" : "Unknown")))))));
-                      ret = srs_h264_write_raw_frames(rtmp, data, size, dts_, pts_);
+                      if (nut == 7 || nut == 8 || nut == 1 || nut == 5) {
+                          if (nut == 5) flag = 1;
+                          if (nut == 7)
+                          {
+                              sps_flag = 1;
+                          }
+                          if (sps_flag && nut == 1) {
+                              dts = dts + 40;
+                              pts = pts + 40;
+                          }
+                          all_len += size;
+                          LOG(INFO) << "type :" << (nut == 7 ? "SPS" : (nut == 8 ? "PPS" : (nut == 5 ? "I" : (nut == 1 ? "P" : (nut == 9 ? "AUD" : (nut == 6 ? "SEI" : "Unknown")))))) <<
+                            " time :" << pts;
+                          srs_human_trace("sent packet: type=%s, time=%d, size=%d, fps=%.2f, b[%d]=%#x(%s)",
+							  srs_human_flv_tag_type2string(SRS_RTMP_TYPE_VIDEO), pts, size, 25, nb_start_code, (char)data[nb_start_code],
+							  (nut == 7 ? "SPS" : (nut == 8 ? "PPS" : (nut == 5 ? "I" : (nut == 1 ? "P" : (nut == 9 ? "AUD" : (nut == 6 ? "SEI" : "Unknown")))))));
+                          ret = srs_h264_write_raw_frames(rtmp, data, size, dts, pts);
+                      }
+                      else
+                          continue;
                       if (ret != 0) {
                           if (srs_h264_is_dvbsp_error(ret)) {
                               srs_human_trace("ignore drop video error, code=%d", ret);
@@ -283,6 +305,7 @@ void jrtplib_rtp_recv_thread(CameraParam *camerapar) {
                           }
                           else {
                               srs_human_trace("send h264 raw data failed. ret=%d", ret);
+                              LOG(ERROR) << "send h264 raw data failed. ret=" << ret;
                           }
                       }
                   }
@@ -290,14 +313,14 @@ void jrtplib_rtp_recv_thread(CameraParam *camerapar) {
               else {
                   printf("error!\n");
               }
-
+              
               AVPacket packet;
               packet.buf = nullptr;
-              packet.data = reinterpret_cast<uint8_t *>(returnps);
-              packet.size = iPsLength;
+              packet.data = reinterpret_cast<uint8_t*>(returnps);
+              packet.size = all_len;
               // out_stream timebase default is {1, 1000}
-              packet.dts = pts * av_q2d(AVRational{1, 90000}) /
-                           av_q2d(AVRational{1, 1000});
+              packet.dts = pts_ * av_q2d(AVRational{ 1, 90000 }) /
+                  av_q2d(AVRational{ 1, 1000 });
               packet.pts = packet.dts;
               packet.flags = flag;
               packet.stream_index = 0;
@@ -305,15 +328,21 @@ void jrtplib_rtp_recv_thread(CameraParam *camerapar) {
               packet.pos = -1;
               packet.side_data = nullptr;
               packet.side_data_elems = 0;
-
+              
+              /*
               int64_t now_time = av_gettime() - start_time;
               LOG(INFO) << now_time;
               if (packet.pts > now_time) {
                 av_usleep(packet.pts - now_time);
               }
+              */
 
               if(flag)
                 firstflag = 1;
+              /*
+              if (firstflag)
+                ret = av_interleaved_write_frame(ofmt_ctx, &packet);
+              */
 
               /*
               AVFormatContext* ic = nullptr;
@@ -336,8 +365,6 @@ void jrtplib_rtp_recv_thread(CameraParam *camerapar) {
               av_read_frame(ic, &packet);
               */
               // 首帧是i帧开始推流
-              //if (firstflag)
-              //  ret = av_interleaved_write_frame(ofmt_ctx, &packet);
 
               for (int i = 0; i < FrameVector.size(); i++) {
                 if (FrameVector[i].data != nullptr) {

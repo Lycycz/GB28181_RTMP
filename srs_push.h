@@ -39,6 +39,7 @@ public:
   void Run();
   void OnH264Data();
   void SetPushType(PUSH_TYPE push_type);
+  void SetPushed();
 
 
 private:
@@ -54,8 +55,11 @@ private:
   bool need_keyframe_;
   void *rtmp_;
   RTMP_STATUS rtmp_status_;
+
   std::list<EncData *> lst_enc_data_;
   std::mutex mutex_;
+  std::condition_variable cv_;
+  bool has_data_;
 };
 
 inline int read_h264_frame(char *data, int size, char **pp, int *pnb_start_code,

@@ -80,7 +80,14 @@ int main(int argc, char** argv)
 	while (1)
 	{
 		for (auto& i : push_vec) {
-			std::thread t1(std::mem_fn(&CameraPush::Run), i);
+			auto param = i.GetParam();
+			if (param->alive && param->played && !param->pushed) {
+				//std::thread t1(std::mem_fn(&CameraPush::Run), i);
+				//i.GetParam()->pushed = 1;
+                std::thread t1(std::mem_fn(&CameraPush::Run), i);
+				param->pushed = 1;
+				t1.detach();
+			}
 		}
 
 		/*

@@ -7,10 +7,9 @@
 
 #include "281_Mutex.h"
 #ifdef _DEBUG
-	#include "glog/logging.h"
-	#pragma comment(lib, "glog.lib")
+#include "glog/logging.h"
+#pragma comment(lib, "glog.lib")
 #endif
-
 extern std::vector<std::string> ReqString;
 
 enum ReqType {
