@@ -24,6 +24,7 @@ FILE(GLOB INCLUDE "include/*.h")
 FILE(GLOB SRC "src/*.cpp")
 FILE(GLOB LIBS "thirdparty/lib/*.lib")
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 message(STATUS "ThirdParty Include: ${Third_Include}")
 message(STATUS "Include: ${INCLUDE}")
 message(STATUS "Src: ${SRC}")

@@ -1,6 +1,6 @@
 #include "demo.h"
-#include "rtp.h"
 #include "include/srs_librtmp/srs_librtmp.h"
+#include "rtp.h"
 
 enum RTMP_STATUS {
   RS_STM_Init,       // 初始化状态
@@ -13,7 +13,8 @@ enum RTMP_STATUS {
 enum ENC_DATA_TYPE { VIDEO_DATA, AUDIO_DATA, META_DATA };
 
 typedef struct EncData {
-EncData(void) : _data(NULL), _dataLen(0), _bVideo(false), _dts(0), flag(false) {}
+  EncData(void)
+      : _data(NULL), _dataLen(0), _bVideo(false), _dts(0), flag(false) {}
   uint8_t *_data;
   int _dataLen;
   bool _bVideo;
@@ -27,34 +28,37 @@ enum PUSH_TYPE { FFMPEG, SRS };
 class CameraPush {
 public:
   explicit CameraPush();
-  explicit CameraPush(const CameraPush& camp);
+  explicit CameraPush(const CameraPush &camp);
   CameraPush(CameraParam &campar);
   ~CameraPush();
 
 public:
-  void SetParam(CameraParam& campar);
-  CameraParam* GetParam();
-  //unused
+  void SetParam(CameraParam &campar);
+  CameraParam *GetParam();
+  // unused
   void SetFault(PUSH_TYPE push_type_);
   void Run();
   void OnH264Data();
   void SetPushType(PUSH_TYPE push_type);
   void SetPushed();
 
-
-private:
+protected:
   void push_stream_ffmpeg();
   void push_stream_srs();
   void GotH264Nal(uint8_t *pData, int nLen, uint32_t ts, bool flag);
   void srs_send_data();
 
   AVFormatContext *Init_ofmt_ctx();
+  void CallConnect();
+  void CallDisconnect();
 
-  CameraParam* campar_;
+private:
+  CameraParam *campar_;
   PUSH_TYPE push_type_;
   bool need_keyframe_;
   void *rtmp_;
   RTMP_STATUS rtmp_status_;
+  int retrys_;
 
   std::list<EncData *> lst_enc_data_;
   std::mutex mutex_;

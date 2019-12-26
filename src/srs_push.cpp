@@ -1,18 +1,20 @@
 #include "srs_push.h"
 
-CameraPush::CameraPush() : need_keyframe_(true), rtmp_(nullptr),
-    rtmp_status_(RS_STM_Init), campar_(nullptr), push_type_(SRS) {}
+#define MAX_RETRY_TIME 3
+CameraPush::CameraPush()
+    : need_keyframe_(true), rtmp_(nullptr), rtmp_status_(RS_STM_Init),
+      campar_(nullptr), push_type_(SRS), retrys_(0) {}
 
 CameraPush::CameraPush(CameraParam &campar)
-    : need_keyframe_(true), rtmp_(nullptr),
-      rtmp_status_(RS_STM_Init),push_type_(SRS) {
-      campar_ = &campar;
+    : need_keyframe_(true), rtmp_(nullptr), rtmp_status_(RS_STM_Init),
+      push_type_(SRS), retrys_(0) {
+  campar_ = &campar;
 }
 
-CameraPush::CameraPush(const CameraPush& camp)
+CameraPush::CameraPush(const CameraPush &camp)
     : need_keyframe_(camp.need_keyframe_), rtmp_(camp.rtmp_),
-    rtmp_status_(camp.rtmp_status_), push_type_(camp.push_type_) {
-    campar_ = camp.campar_;
+      rtmp_status_(camp.rtmp_status_), push_type_(camp.push_type_), retrys_(0) {
+  campar_ = camp.campar_;
 }
 
 CameraPush::~CameraPush() {
@@ -26,32 +28,28 @@ CameraPush::~CameraPush() {
   }
 }
 
-CameraParam* CameraPush::GetParam() {
-    return campar_;
-}
+CameraParam *CameraPush::GetParam() { return campar_; }
 
 void CameraPush::SetFault(PUSH_TYPE push_type) {
-    need_keyframe_ = true;
-    rtmp_ = nullptr;
-    rtmp_status_ = RS_STM_Init;
-    SetPushType(push_type);
+  need_keyframe_ = true;
+  rtmp_ = nullptr;
+  rtmp_status_ = RS_STM_Init;
+  SetPushType(push_type);
 }
 
-void CameraPush::SetParam(CameraParam& campar) {
-    campar_ = &campar;
-}
+void CameraPush::SetParam(CameraParam &campar) { campar_ = &campar; }
 
 void CameraPush::Run() {
   std::thread t1 = std::thread(std::bind(&CameraPush::OnH264Data, this));
   std::thread t2;
   switch (push_type_) {
   case FFMPEG: {
-      t2 = std::thread(std::bind(&CameraPush::push_stream_ffmpeg, this));
-    //push_stream_ffmpeg();
+    t2 = std::thread(std::bind(&CameraPush::push_stream_ffmpeg, this));
+    // push_stream_ffmpeg();
   } break;
   case SRS: {
-      t2 = std::thread(std::bind(&CameraPush::push_stream_srs, this));
-    //push_stream_srs();
+    t2 = std::thread(std::bind(&CameraPush::push_stream_srs, this));
+    // push_stream_srs();
   } break;
   }
   t1.join();
@@ -59,27 +57,34 @@ void CameraPush::Run() {
 }
 
 void CameraPush::push_stream_srs() {
-  //rtmp_ = srs_rtmp_create(campar_->StreamIp.c_str());
+  // rtmp_ = srs_rtmp_create(campar_->StreamIp.c_str());
   rtmp_ = srs_rtmp_create("rtmp://192.168.44.91/live/home");
-    while (campar_->played && campar_->alive) {
+  while (campar_->played && campar_->alive) {
     if (rtmp_ != nullptr) {
       switch (rtmp_status_) {
       case RS_STM_Init: {
         if (srs_rtmp_handshake(rtmp_) == 0) {
           srs_human_trace("SRS: simple handshake ok.");
           rtmp_status_ = RS_STM_Handshaked;
+        } else {
+          CallDisconnect();
         }
       } break;
       case RS_STM_Handshaked: {
         if (srs_rtmp_connect_app(rtmp_) == 0) {
           srs_human_trace("SRS: connect vhost/app ok.");
           rtmp_status_ = RS_STM_Connected;
+        } else {
+          CallDisconnect();
         }
       } break;
       case RS_STM_Connected: {
         if (srs_rtmp_publish_stream(rtmp_) == 0) {
           srs_human_trace("SRS: publish stream ok.");
           rtmp_status_ = RS_STM_Published;
+          CallConnect();
+        } else {
+          CallDisconnect();
         }
       } break;
       case RS_STM_Published: {
@@ -202,6 +207,43 @@ void CameraPush::GotH264Nal(uint8_t *pData, int nLen, uint32_t ts, bool flag) {
   cv_.notify_all();
 }
 
+void CameraPush::CallConnect() {
+  need_keyframe_ = true;
+  retrys_ = 0;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::list<EncData *>::iterator iter = lst_enc_data_.begin();
+    while (iter != lst_enc_data_.end()) {
+      EncData *ptr = *iter;
+      lst_enc_data_.erase(iter++);
+      delete[] ptr->data;
+      delete ptr;
+    }
+  }
+}
+
+void CameraPush::CallDisconnect() {
+  need_keyframe_ = true;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (rtmp_) {
+      srs_rtmp_destroy(rtmp_);
+      rtmp_ = nullptr;
+    }
+    if (rtmp_status_ != RS_STM_CLOSED) {
+      rtmp_status_ = RS_STM_INIT;
+      retrys_++;
+      if (retrys <= MAX_RETRY_TIME) {
+        rtmp_ = srs_rtmp_create(campar_->StreamIp.c_str());
+      } else {
+        std::cout << "retry " << MAX_RETRY_TIME << " times connect error!"
+                  << std::endl;
+        // exit(1);
+      }
+    }
+  }
+}
+
 void CameraPush::OnH264Data() {
 #ifdef RTP_SOCKETTYPE_WINSOCK
   WSADATA dat;
@@ -276,8 +318,8 @@ void CameraPush::OnH264Data() {
               pts = pts * av_q2d(AVRational{1, 90000}) /
                      av_q2d(AVRational{1, 1000});
               */
-              pts = pts * av_q2d(AVRational{ 1, 90000 }) /
-                  av_q2d(AVRational{ 1, 1000 });
+              pts = pts * av_q2d(AVRational{1, 90000}) /
+                    av_q2d(AVRational{1, 1000});
               dts = pts;
 
               if (returnps[3] == '\x67' || returnps[3] == '\x61') {
@@ -307,10 +349,16 @@ void CameraPush::OnH264Data() {
                                                        : (nut == 6 ? "SEI"
                                                                    : "Unknow"
                                                                      "n")))))));
-                  if (nut == 7) need_keyframe_ = false;
-                  if (need_keyframe_) return;
-					GotH264Nal(reinterpret_cast<uint8_t*>(data), size, pts,
-						flag);
+
+                  // 首帧是i帧开始推送, sps pps i
+                  if (nut == 7)
+                    need_keyframe_ = false;
+                  if (need_keyframe_)
+                    return;
+                  // pps sps I P
+                  if (nut == 7 || nut == 8 || nut == 5 || nut == 1)
+                    GotH264Nal(reinterpret_cast<uint8_t *>(data), size, pts,
+                               flag);
                 }
               }
 
@@ -375,10 +423,10 @@ void CameraPush::srs_send_data() {
   EncData *dataPtr = nullptr;
   {
     std::unique_lock<std::mutex> lock(mutex_);
-    cv_.wait(lock, [=] {return has_data_; });
-    //if (lst_enc_data_.size() > 0) {
-      dataPtr = lst_enc_data_.front();
-      lst_enc_data_.pop_front();
+    cv_.wait(lock, [=] { return has_data_; });
+    // if (lst_enc_data_.size() > 0) {
+    dataPtr = lst_enc_data_.front();
+    lst_enc_data_.pop_front();
     //}
   }
   if (dataPtr != NULL) {
@@ -404,7 +452,7 @@ void CameraPush::srs_send_data() {
         }
       }
     }
-    delete[]dataPtr->_data;
+    delete[] dataPtr->_data;
     delete dataPtr;
   }
 }

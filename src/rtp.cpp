@@ -278,6 +278,7 @@ void jrtplib_rtp_recv_thread(CameraParam *camerapar) {
                           if (nut == 5) flag = 1;
                           if (nut == 7)
                           {
+                              firstflag = 1;
                               sps_flag = 1;
                           }
                           if (sps_flag && nut == 1) {
@@ -290,7 +291,8 @@ void jrtplib_rtp_recv_thread(CameraParam *camerapar) {
                           srs_human_trace("sent packet: type=%s, time=%d, size=%d, fps=%.2f, b[%d]=%#x(%s)",
 							  srs_human_flv_tag_type2string(SRS_RTMP_TYPE_VIDEO), pts, size, 25, nb_start_code, (char)data[nb_start_code],
 							  (nut == 7 ? "SPS" : (nut == 8 ? "PPS" : (nut == 5 ? "I" : (nut == 1 ? "P" : (nut == 9 ? "AUD" : (nut == 6 ? "SEI" : "Unknown")))))));
-                          ret = srs_h264_write_raw_frames(rtmp, data, size, dts, pts);
+                          if(firstflag)
+                              ret = srs_h264_write_raw_frames(rtmp, data, size, dts, pts);
                       }
                       else
                           continue;
