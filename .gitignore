@@ -345,4 +345,5 @@ tags
 /.#rtp.cpp
 /gb28281_demo.exe
 build
+.ccls-cache/
 *.json

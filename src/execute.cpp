@@ -26,7 +26,7 @@ int main(int argc, char** argv)
 	ret = eXosip_init(ex);
 	ret = eXosip_listen_addr(ex, IPPROTO_UDP, NULL, 5060, AF_INET, 0);
 
-	LiveVideoParams::ReadCfg("E:/tmp_project/gb28281_demo/GB28181.txt", Singleton<LiveVideoParams>::Instance());
+	LiveVideoParams::ReadCfg("E://tmp_project/gb28281_demo/config/GB28181.txt", Singleton<LiveVideoParams>::Instance());
 
 	std::vector<CameraPush> push_vec;
 	for (auto& i : Singleton<LiveVideoParams>::Instance().CameraParams.camparlist) {
@@ -76,22 +76,24 @@ int main(int argc, char** argv)
 	Sleep(5000);
 	Send_Invite_Play(ex, &Singleton<LiveVideoParams>::Instance());
 	Sleep(1000);
-
+	
+	
 	while (1)
 	{
-		/*
+		// 使用缓冲区
 		for (auto& i : push_vec) {
 			auto param = i.GetParam();
 			if (param->alive && param->played && !param->pushed) {
+				std::thread t1(std::mem_fn(&CameraPush::Run), i);
+				i.GetParam()->pushed = 1;
 				//std::thread t1(std::mem_fn(&CameraPush::Run), i);
-				//i.GetParam()->pushed = 1;
-                std::thread t1(std::mem_fn(&CameraPush::Run), i);
 				param->pushed = 1;
 				t1.detach();
 			}
 		}
-		*/
 
+		// 使用直接推流
+		/*
 		for (auto& i : Singleton<LiveVideoParams>::Instance().CameraParams.camparlist) {
 
 			if (i.alive && i.played && !i.pushed)
@@ -101,8 +103,15 @@ int main(int argc, char** argv)
 				t1.detach();
 			}
 		}
+		*/
 		Sleep(1000);
 	}
+	/*
+	auto cam = Singleton<LiveVideoParams>::Instance().CameraParams.camparlist[0];
+	std::thread t1(std::mem_fn(&CameraParam::push_stream), cam);
+	cam.pushed = 1;
+	t1.join();
+	*/
 
 	//Send_Catalog_Single(ex, &livevideoparams.CameraParams[0], livevideoparams.gb28181params);
 	return 0;
