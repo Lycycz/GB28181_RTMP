@@ -38,14 +38,33 @@ const char* whitespace_cb(mxml_node_t* node, int where)
 	return NULL;
 }
 
-void LiveVideoParams::ReadCfg(std::string cfgpath, LiveVideoParams&livevideoparams)
+int LiveVideoParams::ReadCfg(std::string cfgpath, LiveVideoParams&livevideoparams)
 {
 	libconfig::Config config;
-	config.readFile(cfgpath.c_str());
-	livevideoparams.gb28181params.localSipId = config.lookup("server_id").c_str();
-	livevideoparams.gb28181params.localIpAddr = config.lookup("server_ipaddr").c_str();
-	livevideoparams.gb28181params.localSipPort = config.lookup("server_port");
-	livevideoparams.gb28181params.SN = 1;
+	try
+	{
+		config.readFile(cfgpath.c_str());
+	}
+	catch (...)
+	{
+		SPDLOG_ERROR("Cfg file is not exist");
+		return -1;
+	}
+
+	if (config.exists("server_id") &&
+		config.exists("server_ipaddr") &&
+		config.exists("server_port"))
+	{
+		livevideoparams.gb28181params.localSipId = config.lookup("server_id").c_str();
+		livevideoparams.gb28181params.localIpAddr = config.lookup("server_ipaddr").c_str();
+		livevideoparams.gb28181params.localSipPort = config.lookup("server_port");
+		livevideoparams.gb28181params.SN = 1;
+	}
+	else
+	{
+		SPDLOG_ERROR("Cfg file Param is not exist");
+		return -1;
+	}
 
 	libconfig::Setting& root = config.getRoot();
 	libconfig::Setting& cameras = root["cameraParam"];

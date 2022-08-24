@@ -10,6 +10,9 @@ int main(int argc, char** argv)
 	FLAGS_alsologtostderr = 1;
 	google::InitGoogleLogging(argv[0]);
 	google::SetLogDestination(google::GLOG_INFO, "./log/");
+
+	SpdLogw::InitLogger();
+	SPDLOG_INFO("Test SpdLog!");
 #endif
 	int ret = 0;
 	osip_message_t* reg = NULL;

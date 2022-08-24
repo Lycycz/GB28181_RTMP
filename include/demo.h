@@ -37,6 +37,7 @@
 
 #ifdef _DEBUG
 #include "glog/logging.h"
+#include "spdlogw.h"
 #pragma comment(lib, "jrtplib_d.lib")
 #pragma comment(lib, "jthread_d.lib")
 #pragma comment(lib, "glog.lib")
@@ -138,7 +139,7 @@ public:
 	//			-1 if not in CameraParams
 	template<class C>
 	int FindSipIndex(std::string sipid, C vec);
-	static void ReadCfg(std::string cfgpath, LiveVideoParams& livevideoparams);
+	static int ReadCfg(std::string cfgpath, LiveVideoParams& livevideoparams);
 };
 
 const char* whitespace_cb(mxml_node_t* node, int where);
