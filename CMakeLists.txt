@@ -9,7 +9,9 @@ project(GB28181_RTMP)
 #  ""
 #  )
 
-link_directories("../thirdparty/lib")
+set(libPath ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/lib)
+link_directories(${libPath})
+
 include_directories("thirdparty/include"
   "thirdparty/include/osip"
   "thirdparty/include/mxml"
