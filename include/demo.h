@@ -5,7 +5,7 @@
 #include "Singleton.h"
 #include "device.h"
 
-#include <stdio.h>
+#include <cstdio>
 #include <winsock2.h>
 
 #include "osip2/osip_mt.h"
@@ -20,7 +20,7 @@
 #include "rtplibraryversion.h"
 
 
-#include <stdlib.h>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -28,13 +28,27 @@
 #include <algorithm>
 #include <cassert>
 #include <map>
+#include <list>
 
 #include <libconfig.h++>
 #include <mxml.h>
-#include <time.h>
+#include <ctime>
 #include <process.h>
 
-//#pragma comment(lib, "jrtplib_d.lib")
+#ifdef _DEBUG
+#include "glog/logging.h"
+#pragma comment(lib, "jrtplib_d.lib")
+#pragma comment(lib, "jthread_d.lib")
+#pragma comment(lib, "glog.lib")
+#elif
+#pragma comment(lib, "jrtplib.lib")
+#pragma comment(lib, "jthread.lib")
+#endif
+
+
+#ifdef _MSC_VER
+#pragma comment(lib, "legacy_stdio_definitions.lib")
+#endif
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "mxml1.lib")
 #pragma comment(lib, "eXosip.lib")
@@ -47,6 +61,15 @@
 #pragma comment(lib, "Qwave.lib")
 #pragma comment(lib, "delayimp.lib")
 #pragma comment(lib, "libconfig++.lib")
+
+#pragma comment(lib, "avcodec.lib")
+#pragma comment(lib, "avformat.lib")
+#pragma comment(lib, "avutil.lib")
+#pragma comment(lib, "avdevice.lib")
+#pragma comment(lib, "avfilter.lib")
+#pragma comment(lib, "postproc.lib")
+#pragma comment(lib, "swresample.lib")
+#pragma comment(lib, "swscale.lib")
 
 class CameraParam {
 public:
@@ -88,7 +111,6 @@ public:
 	Mutex mutex_;
 };
 
-
 struct gb28181Params {
 	std::string localSipId;		//服务器sip
 	std::string localIpAddr;	//服务器ip
@@ -101,9 +123,12 @@ public:
 	LiveVideoParams() : CameraNum(0), StreamType(0) {};
 
 	int CameraNum;
+	// contains mutex control
 	CameraParamList CameraParams;
+	// server pararms
 	gb28181Params gb28181params;
 
+	// contains mutex control
 	ClientList clientlist;
 	// 流类型
 	int StreamType;
@@ -118,7 +143,8 @@ public:
 
 const char* whitespace_cb(mxml_node_t* node, int where);
 
-static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je, LiveVideoParams* livevideoparams);
+static int Msg_is_message_fun(struct eXosip_t* peCtx, eXosip_event_t* je,
+	LiveVideoParams* livevideoparams);
 
 void Send_Catalogs(eXosip_t* ex, LiveVideoParams* livedioparams);
 

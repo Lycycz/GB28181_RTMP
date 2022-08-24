@@ -338,4 +338,12 @@ ASALocalRun/
 
 # BeatPulse healthcheck temp database
 healthchecksdb
+
 /gb28281_demo.rar
+
+tags
+/.#rtp.cpp
+/gb28281_demo.exe
+build
+.ccls-cache/
+*.json

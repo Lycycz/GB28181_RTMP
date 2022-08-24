@@ -1,5 +1,4 @@
 #pragma once
-#pragma once
 #include <string>
 #include <vector>
 #include <iostream>
@@ -7,10 +6,9 @@
 
 #include "281_Mutex.h"
 #ifdef _DEBUG
-	#include "glog/logging.h"
-	#pragma comment(lib, "glog.lib")
+#include "glog/logging.h"
+#pragma comment(lib, "glog.lib")
 #endif
-
 extern std::vector<std::string> ReqString;
 
 enum ReqType {
@@ -70,7 +68,7 @@ public:
 	std::vector<Client>  DelClientReq(std::string camsip, std::string req);
 	int ClientIndex(std::string sip);
 	// 只在构造删除时的结果时使用，不会计算重复，reqcamlist为空，只使用sip,ip_,port_字段
-	// unused
+	[[deprecated("delete list use vector<Client> instead ")]]
 	void AddClient(Client client);
 
 	std::vector<Client> Getclientlist();

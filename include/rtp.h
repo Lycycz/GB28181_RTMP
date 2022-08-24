@@ -20,6 +20,7 @@ extern "C"
 
 #include <vector>
 #include <deque>
+#include <map>
 #include <stdlib.h>
 #include <stdio.h>
 #include <iostream>
@@ -51,6 +52,7 @@ struct program_stream_pack_bb_header
 struct Frame {
 	int size;
 	char* data;
+    Frame(int size_, char* data_) :size(size_), data(data_) {}
 };
 
 union littel_endian_size
@@ -81,7 +83,7 @@ unsigned long parse_time_stamp(const unsigned char* p);
 
 inline int ProgramStreamPackHeader(char* Pack, int length, char **NextPack, int *leftlength)
 {
-    printf("%02x %02x %02x %02x\n",Pack[0],Pack[1],Pack[2],Pack[3]);
+    //printf("%02x %02x %02x %02x\n",Pack[0],Pack[1],Pack[2],Pack[3]);
     //通过 00 00 01 ba头的第14个字节的最后3位来确定头部填充了多少字节
     program_stream_pack_header *PsHead = (program_stream_pack_header *)Pack;
     unsigned char pack_stuffing_length = PsHead->stuffinglen & '\x07';
@@ -109,7 +111,7 @@ inline int ProgramStreamPackHeader(char* Pack, int length, char **NextPack, int 
 
 inline int Pes(char* Pack, int length, char** NextPack, int* leftlength, char** PayloadData, int* PayloadDataLen)
 {
-	printf("[%s]%x %x %x %x\n", __FUNCTION__, Pack[0], Pack[1], Pack[2], Pack[3]);
+	// printf("[%s]%x %x %x %x\n", __FUNCTION__, Pack[0], Pack[1], Pack[2], Pack[3]);
 	program_stream_e* PSEPack = (program_stream_e*)Pack;
 
 	*PayloadData = 0;
@@ -118,7 +120,7 @@ inline int Pes(char* Pack, int length, char** NextPack, int* leftlength, char** 
 	if (length < sizeof(program_stream_e)) return 0;
 
 	littel_endian_size pse_length;
-	printf("%x %x", PSEPack->PackLength.byte[0], PSEPack->PackLength.byte[1]);
+	// printf("%x %x", PSEPack->PackLength.byte[0], PSEPack->PackLength.byte[1]);
 	pse_length.byte[0] = PSEPack->PackLength.byte[1];
 	pse_length.byte[1] = PSEPack->PackLength.byte[0];
 
@@ -143,7 +145,7 @@ inline int Pes(char* Pack, int length, char** NextPack, int* leftlength, char** 
 
 inline int ProgramStreamMap(char* Pack, int length, char** NextPack, int* leftlength, char** PayloadData, int* PayloadDataLen)
 {
-	printf("[%s]%x %x %x %x\n", __FUNCTION__, Pack[0], Pack[1], Pack[2], Pack[3]);
+	// printf("[%s]%x %x %x %x\n", __FUNCTION__, Pack[0], Pack[1], Pack[2], Pack[3]);
 
 	program_stream_map* PSMPack = (program_stream_map*)Pack;
 
@@ -251,4 +253,6 @@ inline int GetH246FromPs(char* buffer,int length, char **h264Buffer, int *h264le
     return *h264length;
 }
 
+void checkerror(int rtperr);
+// ffmpeg进行推流
 void jrtplib_rtp_recv_thread(CameraParam* camerapar);
